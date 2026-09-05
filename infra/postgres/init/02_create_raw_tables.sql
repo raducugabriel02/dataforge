@@ -10,6 +10,9 @@ CREATE TABLE IF NOT EXISTS raw.bank_transactions (
     description TEXT NOT NULL,
     amount NUMERIC(12, 2) NOT NULL,
     balance_after NUMERIC(12, 2) NOT NULL,
+    -- CSV line number at ingest time: the only way to recover true intra-day
+    -- ledger order, since txn_date alone only has day granularity.
+    _source_row_number INT NOT NULL,
     _source_file TEXT NOT NULL,
     _loaded_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );

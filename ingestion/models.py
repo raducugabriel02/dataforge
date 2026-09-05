@@ -12,6 +12,7 @@ class ParsedTransaction(BaseModel):
     amount: Decimal
     balance_after: Decimal
     source_bank: str
+    source_row_number: int
 
     @field_validator("description")
     @classmethod

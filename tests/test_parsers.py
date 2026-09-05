@@ -34,7 +34,9 @@ def test_bt_parser_happy_path(tmp_path: Path) -> None:
     assert first.amount == Decimal("-45.32")
     assert first.balance_after == Decimal("954.68")
     assert first.source_bank == "bt"
+    assert first.source_row_number == 2
     assert result.transactions[1].amount == Decimal("4000.00")
+    assert result.transactions[1].source_row_number == 3
 
 
 def test_bt_parser_skips_corrupt_rows_but_keeps_valid_ones(tmp_path: Path) -> None:

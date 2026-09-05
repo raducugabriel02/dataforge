@@ -16,7 +16,7 @@ class BTParser(BankStatementParser):
     def _expected_header(self) -> list[str]:
         return ["Data", "Descriere", "Suma Debit", "Suma Credit", "Sold"]
 
-    def _parse_row(self, row: dict[str, str]) -> ParsedTransaction:
+    def _parse_row(self, row: dict[str, str], line_number: int) -> ParsedTransaction:
         txn_date = datetime.strptime(row["Data"], "%d.%m.%Y").date()
         debit = row["Suma Debit"].strip()
         credit = row["Suma Credit"].strip()
@@ -34,4 +34,5 @@ class BTParser(BankStatementParser):
             amount=amount,
             balance_after=Decimal(row["Sold"]),
             source_bank=self.source_bank,
+            source_row_number=line_number,
         )

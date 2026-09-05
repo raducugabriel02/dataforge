@@ -68,6 +68,7 @@ def test_loading_same_file_three_times_produces_no_duplicates(
             amount=Decimal("-10.00"),
             balance_after=Decimal("990.00"),
             source_bank=_TEST_SOURCE_BANK,
+            source_row_number=2,
         ),
         ParsedTransaction(
             txn_date=date(2026, 1, 2),
@@ -75,6 +76,7 @@ def test_loading_same_file_three_times_produces_no_duplicates(
             amount=Decimal("-20.00"),
             balance_after=Decimal("970.00"),
             source_bank=_TEST_SOURCE_BANK,
+            source_row_number=3,
         ),
     ]
     loader = RawLoader(pg_config)

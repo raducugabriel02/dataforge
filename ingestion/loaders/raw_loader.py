@@ -13,10 +13,11 @@ from ingestion.models import ParsedTransaction
 
 _INSERT_SQL = """
     INSERT INTO raw.bank_transactions
-        (_row_hash, source_bank, txn_date, description, amount, balance_after, _source_file)
+        (_row_hash, source_bank, txn_date, description, amount, balance_after,
+         _source_row_number, _source_file)
     VALUES
         (%(row_hash)s, %(source_bank)s, %(txn_date)s, %(description)s,
-         %(amount)s, %(balance_after)s, %(source_file)s)
+         %(amount)s, %(balance_after)s, %(source_row_number)s, %(source_file)s)
     ON CONFLICT (_row_hash) DO NOTHING
 """
 
@@ -68,6 +69,7 @@ class RawLoader:
                         "description": txn.description,
                         "amount": txn.amount,
                         "balance_after": txn.balance_after,
+                        "source_row_number": txn.source_row_number,
                         "source_file": str(source_file),
                     },
                 )

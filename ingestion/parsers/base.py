@@ -61,7 +61,7 @@ class BankStatementParser(ABC):
             self._validate_header(reader.fieldnames)
             for line_number, row in enumerate(reader, start=2):
                 try:
-                    result.transactions.append(self._parse_row(row))
+                    result.transactions.append(self._parse_row(row, line_number))
                 except _ROW_ERROR_TYPES as exc:
                     result.errors.append(RowParseError(line_number, row, str(exc)))
         return result
@@ -75,4 +75,4 @@ class BankStatementParser(ABC):
     def _expected_header(self) -> Sequence[str]: ...
 
     @abstractmethod
-    def _parse_row(self, row: dict[str, str]) -> ParsedTransaction: ...
+    def _parse_row(self, row: dict[str, str], line_number: int) -> ParsedTransaction: ...
