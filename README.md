@@ -6,7 +6,7 @@ Detalii complete despre scop, arhitectură, stack și plan pe faze: vezi [CLAUDE
 
 ## Status
 
-**Faza 1 — Ingestia CSV bancar.** Postgres + schemele medallion + parsere per bancă (BT/BCR/ING) + loader idempotent în `raw.bank_transactions`.
+**Faza 2 — dbt staging + marts.** Postgres + ingestie idempotentă (Faza 1) + proiect dbt complet: staging, dimensiuni (inclusiv `dim_expense_category` cu SCD Type 2 via `dbt snapshot`), `fact_financial_transactions`, `mart_monthly_spending`, 21 teste dbt.
 
 ## Quickstart
 
@@ -28,6 +28,19 @@ ruff check . && mypy .
 
 # ingest efectiv al unui extras (idempotent — poți rula de mai multe ori)
 python -m ingestion --bank bt data/sample/bt_statement.csv
+python -m ingestion --bank bcr data/sample/bcr_statement.csv
+python -m ingestion --bank ing data/sample/ing_statement.csv
+
+# instalează dbt (grup separat de dependențe, ține pinurile departe de restul proiectului)
+pip install -e ".[dbt]"
+
+# transformare: seed -> snapshot (SCD2) -> run -> test, sau toate deodată cu build
+dbt deps --project-dir dbt_project --profiles-dir dbt_project
+dbt build --project-dir dbt_project --profiles-dir dbt_project
+
+# lineage + documentație interactivă
+dbt docs generate --project-dir dbt_project --profiles-dir dbt_project
+dbt docs serve --project-dir dbt_project --profiles-dir dbt_project
 ```
 
 > Comenzile `make` din `Makefile` (`make up`, `make test`, etc.) fac exact pașii de mai sus. Necesită GNU Make instalat — nu vine implicit pe Windows.
@@ -38,7 +51,7 @@ python -m ingestion --bank bt data/sample/bt_statement.csv
 infra/postgres/init/   # schema SQL rulat automat la primul start al containerului
 scripts/                # utilitare, ex: generatorul de date bancare fake
 ingestion/              # module Python de ingestie (Faza 1+)
-dbt_project/            # proiect dbt (creat în Faza 2)
+dbt_project/            # staging + marts + seeds + snapshots (Faza 2)
 dags/                   # DAG-uri Airflow (Faza 3+)
 tests/                  # unit tests
 docs/interview-notes.md # note de arhitectură construite fază cu fază

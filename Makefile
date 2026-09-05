@@ -1,4 +1,5 @@
-.PHONY: up down restart logs psql fake-data test lint format typecheck check clean
+.PHONY: up down restart logs psql fake-data ingest lint format typecheck test check clean \
+	dbt-deps dbt-seed dbt-snapshot dbt-run dbt-test dbt-build dbt-docs
 
 up:
 	docker compose up -d
@@ -37,3 +38,27 @@ check: lint typecheck test
 
 clean:
 	docker compose down -v
+
+_dbt = set -a && . ./.env && set +a && dbt
+
+dbt-deps:
+	$(_dbt) deps --project-dir dbt_project --profiles-dir dbt_project
+
+dbt-seed:
+	$(_dbt) seed --project-dir dbt_project --profiles-dir dbt_project
+
+dbt-snapshot:
+	$(_dbt) snapshot --project-dir dbt_project --profiles-dir dbt_project
+
+dbt-run:
+	$(_dbt) run --project-dir dbt_project --profiles-dir dbt_project
+
+dbt-test:
+	$(_dbt) test --project-dir dbt_project --profiles-dir dbt_project
+
+dbt-build:
+	$(_dbt) build --project-dir dbt_project --profiles-dir dbt_project
+
+dbt-docs:
+	$(_dbt) docs generate --project-dir dbt_project --profiles-dir dbt_project
+	$(_dbt) docs serve --project-dir dbt_project --profiles-dir dbt_project
