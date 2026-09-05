@@ -3,7 +3,9 @@
 Produces realistic-looking fixtures for the ingestion pipeline so real
 financial data never has to enter the repo (see CLAUDE.md rule #5).
 Each bank writer deliberately mimics a different real-world quirk:
-delimiter, column names, date format, and debit/credit representation.
+delimiter, column names, date format, debit/credit representation, and a
+messy, bank-specific description string (so dbt staging has real
+normalization work to do, not a no-op).
 """
 
 from __future__ import annotations
@@ -14,12 +16,18 @@ import random
 from dataclasses import dataclass
 from datetime import date, timedelta
 from pathlib import Path
+from typing import Literal
+
+TxnKind = Literal["purchase", "salary", "transfer"]
 
 
 @dataclass(frozen=True)
 class Transaction:
     txn_date: date
-    description: str
+    merchant: str  # clean canonical name/token, e.g. "LIDL"
+    kind: TxnKind
+    city: str
+    card_last4: str
     amount: float  # negative = expense, positive = income
     balance_after: float
 
@@ -30,8 +38,8 @@ CATEGORIES: dict[str, list[str]] = {
     "transport": ["OMV PETROM", "MOL ROMANIA", "STB SA", "UBER"],
     "dining": ["GLOVO", "TAZZ", "MCDONALDS", "STARBUCKS"],
     "entertainment": ["NETFLIX", "SPOTIFY", "CINEMA CITY", "STEAM"],
-    "transfer": ["TRANSFER CATRE RO49AAAA1B31007593840000"],
-    "income": ["SALARIU ANGAJATOR SRL"],
+    "transfer": ["RO49AAAA1B31007593840000"],
+    "income": ["ANGAJATOR SRL"],
 }
 
 AMOUNT_RANGES: dict[str, tuple[float, float]] = {
@@ -44,7 +52,21 @@ AMOUNT_RANGES: dict[str, tuple[float, float]] = {
     "income": (3500.0, 6500.0),
 }
 
+ROMANIAN_CITIES = [
+    "SUCEAVA",
+    "IASI",
+    "CLUJ NAPOCA",
+    "BUCURESTI",
+    "TIMISOARA",
+    "CONSTANTA",
+    "BRASOV",
+]
+
 EXPENSE_CATEGORIES = [c for c in CATEGORIES if c != "income"]
+_KIND_BY_CATEGORY: dict[str, TxnKind] = {
+    "transfer": "transfer",
+    "income": "salary",
+}
 
 
 def _add_months(d: date, months: int) -> date:
@@ -52,6 +74,22 @@ def _add_months(d: date, months: int) -> date:
     year = d.year + month_index // 12
     month = month_index % 12 + 1
     return d.replace(year=year, month=month, day=1)
+
+
+def _make_transaction(
+    rng: random.Random, day: date, category: str, amount: float, balance: float
+) -> Transaction:
+    merchant = rng.choice(CATEGORIES[category])
+    kind = _KIND_BY_CATEGORY.get(category, "purchase")
+    return Transaction(
+        txn_date=day,
+        merchant=merchant,
+        kind=kind,
+        city=rng.choice(ROMANIAN_CITIES),
+        card_last4=f"{rng.randint(1000, 9999)}",
+        amount=amount,
+        balance_after=balance,
+    )
 
 
 def _generate_transactions(
@@ -68,22 +106,44 @@ def _generate_transactions(
     while day < end:
         for _ in range(rng.choices([0, 1, 2, 3], weights=[55, 25, 15, 5])[0]):
             category = rng.choice(EXPENSE_CATEGORIES)
-            merchant = rng.choice(CATEGORIES[category])
             low, high = AMOUNT_RANGES[category]
             amount = -round(rng.uniform(low, high), 2)
             balance = round(balance + amount, 2)
-            txns.append(Transaction(day, merchant, amount, balance))
+            txns.append(_make_transaction(rng, day, category, amount, balance))
 
         if day.day == 1:
-            merchant = CATEGORIES["income"][0]
             low, high = AMOUNT_RANGES["income"]
             amount = round(rng.uniform(low, high), 2)
             balance = round(balance + amount, 2)
-            txns.append(Transaction(day, merchant, amount, balance))
+            txns.append(_make_transaction(rng, day, "income", amount, balance))
 
         day += timedelta(days=1)
 
     return txns
+
+
+def _bt_description(t: Transaction) -> str:
+    if t.kind == "salary":
+        return f"ORDIN PLATA SALARIU {t.merchant}"
+    if t.kind == "transfer":
+        return f"TRANSFER CATRE {t.merchant}"
+    return f"POS {t.card_last4} {t.merchant} {t.city} RO"
+
+
+def _bcr_description(t: Transaction) -> str:
+    if t.kind == "salary":
+        return f"INCASARE SALARIU {t.merchant}"
+    if t.kind == "transfer":
+        return f"PLATA TRANSFER {t.merchant}"
+    return f"CUMPARARE CARD {t.merchant} {t.city}"
+
+
+def _ing_description(t: Transaction) -> str:
+    if t.kind == "salary":
+        return f"SALARY PAYMENT {t.merchant}"
+    if t.kind == "transfer":
+        return f"TRANSFER TO {t.merchant}"
+    return f"CARD PAYMENT {t.merchant} {t.city}"
 
 
 def write_bt_csv(path: Path, txns: list[Transaction]) -> None:
@@ -96,7 +156,7 @@ def write_bt_csv(path: Path, txns: list[Transaction]) -> None:
             credit = f"{t.amount:.2f}" if t.amount > 0 else ""
             row = [
                 t.txn_date.strftime("%d.%m.%Y"),
-                t.description,
+                _bt_description(t),
                 debit,
                 credit,
                 f"{t.balance_after:.2f}",
@@ -110,14 +170,13 @@ def write_bcr_csv(path: Path, txns: list[Transaction]) -> None:
         writer = csv.writer(f, delimiter=";")
         writer.writerow(["Data tranzactie", "Detalii tranzactie", "Suma", "Sold final"])
         for t in txns:
-            writer.writerow(
-                [
-                    t.txn_date.strftime("%d.%m.%Y"),
-                    t.description,
-                    f"{t.amount:.2f}",
-                    f"{t.balance_after:.2f}",
-                ]
-            )
+            row = [
+                t.txn_date.strftime("%d.%m.%Y"),
+                _bcr_description(t),
+                f"{t.amount:.2f}",
+                f"{t.balance_after:.2f}",
+            ]
+            writer.writerow(row)
 
 
 def write_ing_csv(path: Path, txns: list[Transaction]) -> None:
@@ -128,7 +187,7 @@ def write_ing_csv(path: Path, txns: list[Transaction]) -> None:
         for t in txns:
             row = [
                 t.txn_date.isoformat(),
-                t.description,
+                _ing_description(t),
                 f"{t.amount:.2f}",
                 f"{t.balance_after:.2f}",
             ]
