@@ -6,18 +6,31 @@ Detalii complete despre scop, arhitectură, stack și plan pe faze: vezi [CLAUDE
 
 ## Status
 
-**Faza 0 — Fundația.** Doar Postgres + schemele medallion + generatorul de date fake. Fără ingestie reală încă.
+**Faza 1 — Ingestia CSV bancar.** Postgres + schemele medallion + parsere per bancă (BT/BCR/ING) + loader idempotent în `raw.bank_transactions`.
 
 ## Quickstart
 
 ```bash
 cp .env.example .env
-make up
+# dacă ai deja alt Postgres pe portul 5432 (local sau alt proiect Docker),
+# schimbă POSTGRES_PORT din .env înainte de a porni containerul
+docker compose up -d
+
 python -m venv .venv && source .venv/bin/activate   # sau .venv\Scripts\activate pe Windows
 pip install -e ".[dev]"
-make fake-data
-make check   # lint + typecheck + test
+
+python -m scripts.generate_fake_bank_data --bank all --months 6
+
+# rulează testele cu variabilele din .env încărcate în mediu
+set -a && . ./.env && set +a
+pytest -v
+ruff check . && mypy .
+
+# ingest efectiv al unui extras (idempotent — poți rula de mai multe ori)
+python -m ingestion --bank bt data/sample/bt_statement.csv
 ```
+
+> Comenzile `make` din `Makefile` (`make up`, `make test`, etc.) fac exact pașii de mai sus. Necesită GNU Make instalat — nu vine implicit pe Windows.
 
 ## Structură
 

@@ -3,7 +3,12 @@ name = "dataforge"
 version = "0.1.0"
 description = "Personal Data Platform & ELT Warehouse"
 requires-python = ">=3.12"
-dependencies = []
+dependencies = [
+    "pydantic>=2.6",
+    "loguru>=0.7",
+    "tenacity>=8.2",
+    "psycopg[binary]>=3.1",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -19,6 +24,9 @@ include = ["ingestion*", "scripts*"]
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+markers = [
+    "integration: requires a running Postgres (docker compose up)",
+]
 
 [tool.ruff]
 line-length = 100

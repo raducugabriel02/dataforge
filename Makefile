@@ -18,6 +18,9 @@ psql:
 fake-data:
 	python -m scripts.generate_fake_bank_data --bank all --months 6
 
+ingest:
+	set -a && . ./.env && set +a && python -m ingestion --bank $(BANK) $(FILE)
+
 lint:
 	ruff check .
 
@@ -28,7 +31,7 @@ typecheck:
 	mypy .
 
 test:
-	pytest -v
+	set -a && . ./.env && set +a && pytest -v
 
 check: lint typecheck test
 
