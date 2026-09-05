@@ -1,0 +1,25 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: bank_transactions
+        description: >
+          Append-only landing zone for parsed bank statement rows, loaded by
+          the Python ingestion pipeline (Faza 1). Deduped at insert time by
+          _row_hash — a hash of the economic event, not the source file.
+        columns:
+          - name: _row_hash
+            description: SHA-256 of (bank, date, description, amount, balance_after) — the idempotency key.
+          - name: source_bank
+            description: "One of: bt, bcr, ing."
+          - name: txn_date
+          - name: description
+          - name: amount
+            description: Negative = expense, positive = income.
+          - name: balance_after
+          - name: _source_row_number
+            description: CSV line number at ingest time — recovers intra-day ledger order lost by day-granularity dates.
+          - name: _source_file
+          - name: _loaded_at

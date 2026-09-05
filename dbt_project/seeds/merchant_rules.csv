@@ -1,0 +1,24 @@
+pattern,merchant_name,category_name
+LIDL,Lidl,groceries
+KAUFLAND,Kaufland,groceries
+CARREFOUR,Carrefour,groceries
+MEGA IMAGE,Mega Image,groceries
+PROFI,Profi,groceries
+ENGIE ROMANIA,Engie Romania,utilities
+ELECTRICA FURNIZARE,Electrica Furnizare,utilities
+DIGI ROMANIA,Digi Romania,utilities
+ORANGE ROMANIA,Orange Romania,utilities
+OMV PETROM,OMV Petrom,transport
+MOL ROMANIA,Mol Romania,transport
+STB SA,STB,transport
+UBER,Uber,transport
+GLOVO,Glovo,dining
+TAZZ,Tazz,dining
+MCDONALDS,McDonald's,dining
+STARBUCKS,Starbucks,dining
+NETFLIX,Netflix,entertainment
+SPOTIFY,Spotify,entertainment
+CINEMA CITY,Cinema City,entertainment
+STEAM,Steam,entertainment
+ANGAJATOR SRL,Angajator SRL,income
+RO49AAAA1B31007593840000,Transfer bancar,transfer

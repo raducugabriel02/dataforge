@@ -1,0 +1,75 @@
+version: 2
+
+models:
+  - name: dim_date
+    columns:
+      - name: date_key
+        tests: [unique, not_null]
+      - name: date_day
+        tests: [unique, not_null]
+
+  - name: dim_merchant
+    columns:
+      - name: merchant_key
+        tests: [unique, not_null]
+      - name: default_category_name
+        tests:
+          - accepted_values:
+              arguments:
+                values:
+                  [
+                    "groceries",
+                    "utilities",
+                    "transport",
+                    "dining",
+                    "entertainment",
+                    "transfer",
+                    "income",
+                    "uncategorized",
+                  ]
+
+  - name: dim_expense_category
+    columns:
+      - name: category_key
+        tests: [unique, not_null]
+      - name: category_group
+        tests:
+          - accepted_values:
+              arguments:
+                values: ["essential", "discretionary", "transfer", "income", "uncategorized"]
+
+  - name: fact_financial_transactions
+    tests:
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          arguments:
+            min_value: 1
+    columns:
+      - name: transaction_id
+        tests: [unique, not_null]
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+      - name: merchant_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_merchant')
+                field: merchant_key
+      - name: category_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_expense_category')
+                field: category_key
+      - name: amount
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: -10000
+                max_value: 10000
