@@ -33,4 +33,18 @@ Note construite pe parcurs, fază cu fază — nu retroactiv la final. Fiecare s
 
 ## Scalare 100x (după Faza 4)
 
-*(de completat)*
+**Întrebarea:** dacă în loc de un extras lunar personal aș avea 100x volumul (sute de mii de tranzacții/zi, mai multe surse, mai mulți useri) — ce s-ar schimba și ce n-ar trebui să se schimbe?
+
+**Ce s-ar schimba:**
+- **Postgres → warehouse columnar** (ex. Snowflake, BigQuery, ClickHouse). Postgres e un OLTP row-store; agregările pe `mart_monthly_spending` peste sute de milioane de rânduri ar deveni lente. Un columnar store scanează doar coloanele cerute de query, nu rândul întreg — exact profilul de citire al unui mart analitic.
+- **Ingest → fișiere brute în object storage (S3/GCS), apoi `COPY`/bulk load în DWH**, nu `INSERT` rând-cu-rând din Python. La 100x volum, network round-trips per rând devin bottleneck-ul; fișierele batch + load nativ al warehouse-ului sunt cu ordine de mărime mai rapide.
+- **Airflow local → managed (MWAA, Cloud Composer) sau Kubernetes executor** — `LocalExecutor` cu un singur worker nu paralelizează suficient la sute de task-uri concurente (multe surse × mulți useri); ai nevoie de scaling orizontal pe workeri.
+- **`fact_financial_transactions` de la `table` (full refresh) la `incremental` cu `unique_key`** — recalcularea completă zilnică, ok la sute de rânduri, devine ineficientă/costisitoare la scară; modelul incremental procesează doar rândurile noi/schimbate.
+- **Metabase H2 → Postgres/MySQL dedicat** — motivul din [Design Decisions](../README.md#design-decisions) pentru H2 (un singur user local, fără concurrency) dispare exact la 100x: mulți useri, dashboard-uri concurente, nevoie de HA.
+
+**Ce NU s-ar schimba — și de ce ăsta e punctul tare:**
+- **Modelarea dimensională Kimball** (grain-ul faptului, SCD Type 2 pe categorii, surrogate keys) — schema logică e independentă de motorul fizic. Migrezi `fact_financial_transactions` de pe Postgres pe Snowflake fără să rescrii logica de business, doar sintaxa SQL se poate ajusta marginal.
+- **Testele dbt** (unique/not_null/relationships + testele custom de reconciliere sold) — validează *corectitudinea datelor*, nu infrastructura pe care rulează. Aceleași teste, aceeași încredere, indiferent de warehouse.
+- **Principiul idempotenței** (dedup pe hash, incremental models, `catchup` controlat) — e un principiu de design, nu o implementare legată de Postgres/Airflow local; se aplică identic pe orice combinație de instrumente la orice scară.
+
+**Concluzie de interviu:** separarea dintre *modelare* (dbt, teste, grain, SCD) și *infrastructură* (Postgres local, LocalExecutor, H2) e exact motivul pentru care proiectul ăsta, construit la scară personală, rămâne un argument valid pentru "știu să gândesc arhitectural", nu doar "am rulat niște containere".

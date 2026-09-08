@@ -1,6 +1,7 @@
 .PHONY: up down restart logs psql fake-data ingest lint format typecheck test check clean \
 	dbt-deps dbt-seed dbt-snapshot dbt-run dbt-test dbt-build dbt-docs \
-	airflow-up airflow-down airflow-logs airflow-restart
+	airflow-up airflow-down airflow-logs airflow-restart \
+	bi-up bi-down bi-logs
 
 up:
 	docker compose up -d
@@ -78,3 +79,14 @@ airflow-restart: airflow-down airflow-up
 
 airflow-logs:
 	docker compose --profile airflow logs -f airflow-webserver airflow-scheduler
+
+# Profil separat "bi" — nepornit de `make up`. UI la http://localhost:3000.
+bi-up:
+	docker compose --profile bi up -d
+	@echo "Metabase UI: http://localhost:3000 — primul start face setup-ul de admin."
+
+bi-down:
+	docker compose --profile bi down
+
+bi-logs:
+	docker compose --profile bi logs -f metabase
