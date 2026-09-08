@@ -1,0 +1,13 @@
+.git/
+.venv/
+venv/
+__pycache__/
+*.pyc
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+*.egg-info/
+data/private/
+dbt_project/target/
+dbt_project/dbt_packages/
+dbt_project/logs/

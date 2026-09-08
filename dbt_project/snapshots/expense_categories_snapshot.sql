@@ -6,6 +6,7 @@
         unique_key='category_name',
         strategy='timestamp',
         updated_at='updated_at',
+        tags=['bank'],
     )
 }}
 

@@ -1,3 +1,38 @@
+x-airflow-common: &airflow-common
+  build:
+    context: .
+    dockerfile: infra/airflow/Dockerfile
+  profiles: ["airflow"]
+  environment:
+    AIRFLOW__CORE__EXECUTOR: LocalExecutor
+    AIRFLOW__CORE__LOAD_EXAMPLES: "false"
+    AIRFLOW__DATABASE__SQL_ALCHEMY_CONN: "postgresql+psycopg2://${AIRFLOW_POSTGRES_USER}:${AIRFLOW_POSTGRES_PASSWORD}@postgres-airflow:5432/${AIRFLOW_POSTGRES_DB}"
+    AIRFLOW__CORE__FERNET_KEY: ${AIRFLOW_FERNET_KEY}
+    AIRFLOW__WEBSERVER__SECRET_KEY: ${AIRFLOW_WEBSERVER_SECRET_KEY}
+    # metadata Airflow (DAG runs, task instances, logs) e izolata in postgres-airflow;
+    # astea de mai jos sunt credentialele DWH-ului pe care il orchestreaza (schema raw/staging/marts)
+    POSTGRES_HOST: postgres
+    POSTGRES_PORT: "5432"
+    POSTGRES_USER: ${POSTGRES_USER}
+    POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    POSTGRES_DB: ${POSTGRES_DB}
+    DATAFORGE_DATA_DIR: /opt/dataforge/data/private
+    DATAFORGE_DATA_DIR_FALLBACK: /opt/dataforge/data/sample
+    DBT_PROJECT_DIR: /opt/dataforge/dbt_project
+    DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+  volumes:
+    - ./dags:/opt/airflow/dags
+    - airflow_logs:/opt/airflow/logs
+    - ./ingestion:/opt/dataforge/ingestion
+    - ./scripts:/opt/dataforge/scripts
+    - ./dbt_project:/opt/dataforge/dbt_project
+    - ./data:/opt/dataforge/data
+  depends_on:
+    postgres-airflow:
+      condition: service_healthy
+    postgres:
+      condition: service_healthy
+
 services:
   postgres:
     image: postgres:16
@@ -17,5 +52,48 @@ services:
       timeout: 5s
       retries: 10
 
+  # Postgres separat, doar pentru metadata Airflow (DAG runs, task instances, XCom, logs).
+  # Izolat intentionat de DWH-ul de mai sus: `make clean` pe unul nu-l afecteaza pe celalalt,
+  # si nu amestecam baza operationala a orchestratorului cu baza analitica pe care o orchestreaza.
+  postgres-airflow:
+    image: postgres:16
+    restart: unless-stopped
+    profiles: ["airflow"]
+    environment:
+      POSTGRES_USER: ${AIRFLOW_POSTGRES_USER}
+      POSTGRES_PASSWORD: ${AIRFLOW_POSTGRES_PASSWORD}
+      POSTGRES_DB: ${AIRFLOW_POSTGRES_DB}
+    volumes:
+      - airflow_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${AIRFLOW_POSTGRES_USER} -d ${AIRFLOW_POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  airflow-init:
+    <<: *airflow-common
+    command: >
+      bash -c "airflow db migrate &&
+               airflow users create --username ${AIRFLOW_ADMIN_USER:-admin} --password ${AIRFLOW_ADMIN_PASSWORD:-admin} --firstname Admin --lastname User --role Admin --email admin@example.com || true"
+
+  airflow-webserver:
+    <<: *airflow-common
+    ports:
+      - "8080:8080"
+    command: webserver
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-scheduler:
+    <<: *airflow-common
+    command: scheduler
+    depends_on:
+      airflow-init:
+        condition: service_completed_successfully
+
 volumes:
   postgres_data:
+  airflow_postgres_data:
+  airflow_logs:

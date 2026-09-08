@@ -6,7 +6,7 @@ Detalii complete despre scop, arhitectură, stack și plan pe faze: vezi [CLAUDE
 
 ## Status
 
-**Faza 2 — dbt staging + marts.** Postgres + ingestie idempotentă (Faza 1) + proiect dbt complet: staging, dimensiuni (inclusiv `dim_expense_category` cu SCD Type 2 via `dbt snapshot`), `fact_financial_transactions`, `mart_monthly_spending`, 21 teste dbt.
+**Faza 3 — Orchestrare Airflow.** Postgres + ingestie idempotentă (Faza 1) + proiect dbt complet (Faza 2) + DAG `bank_pipeline` (TaskFlow API): verificare sursă → ingest → `dbt seed`/`snapshot`/`run`/`test` → alertă Discord la eșec. Airflow rulează într-un profil Docker separat, cu Postgres propriu pentru metadata (izolat de DWH).
 
 ## Quickstart
 
@@ -44,6 +44,23 @@ dbt docs serve --project-dir dbt_project --profiles-dir dbt_project
 ```
 
 > Comenzile `make` din `Makefile` (`make up`, `make test`, etc.) fac exact pașii de mai sus. Necesită GNU Make instalat — nu vine implicit pe Windows.
+
+### Airflow (Faza 3)
+
+Rulează într-un **profil Docker separat** (`airflow`), nepornit de `make up` — Airflow consumă ~4GB RAM, deci rămâne opțional cât lucrezi pe dbt/ingestie:
+
+```bash
+# completează AIRFLOW_FERNET_KEY în .env (vezi comentariul din .env.example)
+make airflow-up
+# asteapta pana serviciile sunt "healthy"
+make airflow-logs
+```
+
+UI la http://localhost:8080 (user/parolă din `AIRFLOW_ADMIN_USER`/`AIRFLOW_ADMIN_PASSWORD`, implicit `admin`/`admin`). DAG-ul `bank_pipeline` rulează zilnic: verifică `data/private/` (fallback `data/sample/`) pentru CSV-uri noi, le ingerează idempotent, apoi `dbt seed → snapshot → run → test` (filtrate pe tag `bank`). Un test picat oprește pipeline-ul și — dacă `DISCORD_WEBHOOK_URL` e setat în `.env` — trimite o alertă pe Discord.
+
+```bash
+make airflow-down   # oprește doar serviciile Airflow, Postgres-ul de date rămâne pornit separat
+```
 
 ## Structură
 

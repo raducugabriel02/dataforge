@@ -42,4 +42,5 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
-exclude = ["dbt_project/", "data/"]
+# dags/ rulează doar în imaginea Docker a Airflow (dependințe instalate acolo, nu în .venv local)
+exclude = ["dbt_project/", "data/", "dags/"]

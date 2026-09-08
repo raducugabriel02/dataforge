@@ -1,5 +1,6 @@
 .PHONY: up down restart logs psql fake-data ingest lint format typecheck test check clean \
-	dbt-deps dbt-seed dbt-snapshot dbt-run dbt-test dbt-build dbt-docs
+	dbt-deps dbt-seed dbt-snapshot dbt-run dbt-test dbt-build dbt-docs \
+	airflow-up airflow-down airflow-logs airflow-restart
 
 up:
 	docker compose up -d
@@ -62,3 +63,18 @@ dbt-build:
 dbt-docs:
 	$(_dbt) docs generate --project-dir dbt_project --profiles-dir dbt_project
 	$(_dbt) docs serve --project-dir dbt_project --profiles-dir dbt_project
+
+# Profil separat "airflow" — nepornit de `make up`, ca sa poti lucra pe Fazele 0-2
+# fara cele ~4GB RAM pe care le cere Airflow. UI la http://localhost:8080
+# (user/parola din AIRFLOW_ADMIN_USER/AIRFLOW_ADMIN_PASSWORD in .env).
+airflow-up:
+	docker compose --profile airflow up -d
+	@echo "Airflow UI: http://localhost:8080 — 'make airflow-logs' pana la 'healthy'."
+
+airflow-down:
+	docker compose --profile airflow down
+
+airflow-restart: airflow-down airflow-up
+
+airflow-logs:
+	docker compose --profile airflow logs -f airflow-webserver airflow-scheduler

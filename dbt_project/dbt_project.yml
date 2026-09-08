@@ -18,13 +18,16 @@ models:
     staging:
       +materialized: view
       +schema: staging
+      +tags: ["bank"]
     marts:
       +materialized: table
       +schema: marts
+      +tags: ["bank"]
 
 seeds:
   dataforge:
     +schema: staging
+    +tags: ["bank"]
     expense_categories_seed:
       +column_types:
         updated_at: timestamp

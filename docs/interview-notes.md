@@ -18,7 +18,18 @@ Note construite pe parcurs, fază cu fază — nu retroactiv la final. Fiecare s
 
 ## Idempotența end-to-end (după Faza 3)
 
-*(de completat)*
+**Problema:** un DAG zilnic va rula peste aceleași fișiere de mai multe ori — retry manual, restart de container, sau pur și simplu re-declanșare după un fix. Dacă orice pas din pipeline nu e idempotent, o rulare dublă înseamnă date duplicate în warehouse.
+
+**Cum e garantată idempotența pe fiecare strat, capăt la capăt:**
+- **`ingest`** (raw): `RawLoader` face dedup pe `_row_hash` (Faza 1) — task-ul de Airflow nu ține el evidența fișierelor deja procesate, se bazează complet pe loader să fie sigur la re-rulare. Verificat practic: al doilea `trigger` pe DAG a lăsat 149/149/149 rânduri per bancă, neschimbat.
+- **`dbt_seed`**: re-încarcă seed-ul de categorii de fiecare dată (full refresh) — sigur, pentru că fișierul sursă e static; aceleași date in => aceleași date out.
+- **`dbt_snapshot`**: strategia `timestamp` pe `updated_at` — dacă rândul nu s-a schimbat, snapshot-ul nu adaugă o versiune nouă. Așa se păstrează SCD Type 2 corect chiar dacă snapshot-ul rulează zilnic degeaba (fără schimbări reale de categorii).
+- **`dbt_run`**: modelele marts sunt `table` (full refresh la fiecare rulare, nu incremental) — la volumul curent (sute de rânduri) recalcularea completă e mai simplă și mai sigură decât un `unique_key` incremental; ar deveni incremental abia la volum mare (v4+, out of scope acum).
+- **`dbt_test`**: prin construcție n-are stare — doar validează, nu poate produce duplicate.
+
+**Catchup controlat:** DAG-ul are `catchup=False` — la activare, Airflow programează o singură rulare pentru cel mai recent interval încheiat, nu una pentru fiecare zi de la `start_date`. Testat: la unpause a apărut exact un run `scheduled__...`, nu un backlog de rulări istorice. Dacă aș vrea reconstituire istorică explicită (ex. reprocesare completă după un bug), aș folosi `airflow dags backfill` manual, cu control explicit pe intervalul de date — nu las scheduler-ul s-o facă implicit.
+
+**De ce task-urile dbt sunt separate (`seed`→`snapshot`→`run`→`test`), nu un singur `dbt build`:** graful din Airflow UI arată exact unde a picat pipeline-ul (ex. testul, nu seed-ul) fără să deschid loguri; fiecare pas are propriul istoric de retry/durată. Costul: 4 task-uri BashOperator în loc de unul, acceptabil la scara asta.
 
 ## Scalare 100x (după Faza 4)
 
