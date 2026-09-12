@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: dim_repository
+    columns:
+      - name: repo_key
+        tests: [unique, not_null]
+      - name: repo_id
+        tests: [unique, not_null]
+      - name: full_name
+        tests: [unique, not_null]
+
+  - name: fact_daily_productivity
+    # No row-count-min test here (unlike fact_financial_transactions): the
+    # GitHub source is opt-in and needs a manually-supplied token, so an empty
+    # table is a legitimate state on a fresh clone, not a data quality issue.
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [repo_key, date_key]
+    columns:
+      - name: repo_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_repository')
+                field: repo_key
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+      - name: commit_count
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                max_value: 500

@@ -1,0 +1,53 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: github_repositories
+        description: >
+          Latest known state of the user's owned GitHub repositories (Faza 5).
+          Mutable entity — upserted on repo_id, not append-only: pushed_at and
+          language can change between ingestion runs.
+        columns:
+          - name: repo_id
+          - name: full_name
+          - name: name
+          - name: is_private
+          - name: is_fork
+          - name: language
+          - name: created_at
+          - name: pushed_at
+          - name: _loaded_at
+
+      - name: github_commits
+        description: >
+          Append-only landing zone for commits authored by the user across
+          their owned repositories. Deduped on (repo_full_name, sha) — a
+          commit sha is an immutable natural key, so plain insert-dedup
+          applies here, unlike the mutable entities above.
+        columns:
+          - name: repo_full_name
+          - name: sha
+          - name: author_login
+          - name: author_name
+          - name: committed_at
+          - name: message
+          - name: _loaded_at
+
+      - name: github_pull_requests
+        description: >
+          Latest known state of pull requests across the user's owned
+          repositories. Mutable entity — upserted on pr_id: state, merged_at
+          and closed_at change as a PR moves through its lifecycle.
+        columns:
+          - name: pr_id
+          - name: number
+          - name: repo_full_name
+          - name: state
+          - name: title
+          - name: author_login
+          - name: created_at
+          - name: merged_at
+          - name: closed_at
+          - name: _loaded_at

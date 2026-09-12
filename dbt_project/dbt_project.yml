@@ -19,10 +19,16 @@ models:
       +materialized: view
       +schema: staging
       +tags: ["bank"]
+      github:
+        +tags: ["github"]
     marts:
       +materialized: table
       +schema: marts
       +tags: ["bank"]
+      productivity:
+        +tags: ["github"]
+      combined:
+        +tags: ["combined"]
 
 seeds:
   dataforge:

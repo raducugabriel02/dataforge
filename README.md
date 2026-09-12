@@ -6,7 +6,9 @@ Detalii complete despre scop, arhitectură, stack și plan pe faze: vezi [CLAUDE
 
 ## Status
 
-**Faza 4 — Metabase + polish v1.** Postgres + ingestie idempotentă (Faza 1) + proiect dbt complet (Faza 2) + orchestrare Airflow (Faza 3) + dashboard Metabase peste `marts.*` (cheltuieli pe categorii, trend lunar, top merchants). v1 (sursa bancară) e completă.
+**Faza 4 — Metabase + polish v1** (completă). Postgres + ingestie idempotentă (Faza 1) + proiect dbt complet (Faza 2) + orchestrare Airflow (Faza 3) + dashboard Metabase peste `marts.*` (cheltuieli pe categorii, trend lunar, top merchants). v1 (sursa bancară) e completă.
+
+**Faza 5 (v2) — sursa GitHub, în lucru.** Client REST paginat + retry pe rate limit, `raw.github_*`, staging + marts de productivitate (`dim_repository`, `fact_daily_productivity`), mart combinat finanțe×productivitate, DAG Airflow `github_pipeline`. Cod complet și verificat live (date sintetice + `dbt build`/`airflow tasks test`); rularea reală așteaptă un `GITHUB_TOKEN` propriu în `.env`. Rămân: polish README/interview-notes (în lucru chiar acum).
 
 ## Arhitectură
 
@@ -14,22 +16,28 @@ Detalii complete despre scop, arhitectură, stack și plan pe faze: vezi [CLAUDE
 flowchart LR
     subgraph src["Surse"]
         csv["Extrase CSV<br/>BT / BCR / ING"]
+        gh["GitHub REST API<br/>repos / commits / PR-uri"]
     end
 
     subgraph ingest["Ingestie Python (idempotentă)"]
         parser["BankStatementParser"]
         loader["RawLoader<br/>dedup pe _row_hash"]
+        ghclient["GitHubClient<br/>paginare + retry pe rate limit"]
+        ghloader["GitHubRawLoader<br/>upsert (mutabil) / dedup (imuabil)"]
     end
 
     subgraph dwh["Postgres — DWH (medallion)"]
         raw[("raw.bank_transactions")]
+        ghraw[("raw.github_*")]
         staging[["staging views (dbt)"]]
         snapshot[("staging.expense_categories_snapshot<br/>SCD2")]
         marts[("marts.*<br/>facts + dims Kimball")]
+        combined[("marts.mart_daily_finance_productivity")]
     end
 
     subgraph orch["Airflow — profil 'airflow'"]
         dag["bank_pipeline DAG<br/>TaskFlow API"]
+        ghdag["github_pipeline DAG<br/>TaskFlow API, dynamic mapping"]
         afdb[("Postgres<br/>metadata Airflow")]
     end
 
@@ -39,12 +47,18 @@ flowchart LR
     end
 
     csv --> parser --> loader --> raw
+    gh --> ghclient --> ghloader --> ghraw
     raw --> staging --> marts
+    ghraw --> staging
     staging --> snapshot --> marts
+    marts --> combined
     marts --> dash
     dag -. orchestrează .-> parser
-    dag -. "dbt run/test" .-> staging
+    dag -. "dbt run/test tag:bank" .-> staging
+    ghdag -. orchestrează .-> ghclient
+    ghdag -. "dbt run/test tag:github,combined" .-> staging
     dag --- afdb
+    ghdag --- afdb
     dash --- mbdb
 ```
 
@@ -83,11 +97,18 @@ dbt build --project-dir dbt_project --profiles-dir dbt_project
 # lineage + documentație interactivă
 dbt docs generate --project-dir dbt_project --profiles-dir dbt_project
 dbt docs serve --project-dir dbt_project --profiles-dir dbt_project
+
+# sursa GitHub (Faza 5, v2) — completează GITHUB_TOKEN (fine-grained PAT, read-only
+# pe Contents/Metadata/Pull requests) și GITHUB_USERNAME în .env, apoi:
+python -m ingestion.github
+dbt build --project-dir dbt_project --profiles-dir dbt_project --select tag:github tag:combined
 ```
+
+> Pe Windows cu Python 3.14, executabilele `dbt.exe`/`pip.exe` pot crăpa silențios (issue de mediu, nu de proiect) — folosește `python -m pip ...` și, pentru dbt, `python -c "from dbt.cli.main import cli; cli()" <comandă>` în loc de `dbt <comandă>` direct.
 
 > Comenzile `make` din `Makefile` (`make up`, `make test`, etc.) fac exact pașii de mai sus. Necesită GNU Make instalat — nu vine implicit pe Windows.
 
-### Airflow (Faza 3)
+### Airflow (Faza 3 + 5)
 
 Rulează într-un **profil Docker separat** (`airflow`), nepornit de `make up` — Airflow consumă ~4GB RAM, deci rămâne opțional cât lucrezi pe dbt/ingestie:
 
@@ -98,7 +119,12 @@ make airflow-up
 make airflow-logs
 ```
 
-UI la http://localhost:8080 (user/parolă din `AIRFLOW_ADMIN_USER`/`AIRFLOW_ADMIN_PASSWORD`, implicit `admin`/`admin`). DAG-ul `bank_pipeline` rulează zilnic: verifică `data/private/` (fallback `data/sample/`) pentru CSV-uri noi, le ingerează idempotent, apoi `dbt seed → snapshot → run → test` (filtrate pe tag `bank`). Un test picat oprește pipeline-ul și — dacă `DISCORD_WEBHOOK_URL` e setat în `.env` — trimite o alertă pe Discord.
+UI la http://localhost:8080 (user/parolă din `AIRFLOW_ADMIN_USER`/`AIRFLOW_ADMIN_PASSWORD`, implicit `admin`/`admin`). Două DAG-uri, zilnice, fiecare cu propria alertă Discord la eșec (`dags/common.py`, folosit de amândouă):
+
+- **`bank_pipeline`** — verifică `data/private/` (fallback `data/sample/`) pentru CSV-uri noi, le ingerează idempotent, apoi `dbt seed → snapshot → run → test` (tag `bank`).
+- **`github_pipeline`** (Faza 5) — ingerează repos, apoi (dynamic task mapping, un task per repo) commit-uri + PR-uri, apoi `dbt run/test` pe `tag:github` + `tag:combined` (reconstruiește și mart-ul combinat finanțe×productivitate). Cere `GITHUB_TOKEN`/`GITHUB_USERNAME` completate în `.env` — altfel task-ul de ingest eșuează cu un mesaj clar, nu silențios.
+
+Un test dbt picat oprește pipeline-ul respectiv.
 
 ```bash
 make airflow-down   # oprește doar serviciile Airflow, Postgres-ul de date rămâne pornit separat
@@ -139,9 +165,9 @@ make bi-down
 ```
 infra/postgres/init/   # schema SQL rulat automat la primul start al containerului
 scripts/                # utilitare, ex: generatorul de date bancare fake
-ingestion/              # module Python de ingestie (Faza 1+)
-dbt_project/            # staging + marts + seeds + snapshots (Faza 2)
-dags/                   # DAG-uri Airflow (Faza 3+)
+ingestion/              # module Python de ingestie (bank: Faza 1, github: Faza 5)
+dbt_project/            # staging + marts + seeds + snapshots (bank: Faza 2, github: Faza 5)
+dags/                   # DAG-uri Airflow (bank_pipeline: Faza 3, github_pipeline: Faza 5, common.py partajat)
 tests/                  # unit tests
 docs/interview-notes.md # note de arhitectură construite fază cu fază
 docs/screenshots/       # capturi pentru README (lineage dbt, dashboard Metabase)
@@ -161,3 +187,5 @@ Versiune scurtă a deciziilor de arhitectură; explicațiile complete, construit
 - **Idempotență la fiecare strat, nu doar la ingest** — dedup pe `_row_hash` în `raw`, `dbt seed`/`snapshot`/`run` toate sigure la re-rulare (detalii: [Idempotența end-to-end](docs/interview-notes.md#idempotența-end-to-end-după-faza-3)) — un DAG zilnic *va* rula de mai multe ori peste aceleași date (retry, restart), și fiecare pas trebuie să reziste la asta independent.
 - **SCD Type 2 via `dbt snapshot`, nu `updated_at` simplu pe categorii** — categoriile de cheltuieli se schimbă în timp; păstrăm istoricul (`valid_from`/`valid_to`/`is_current`) ca un raport din trecut să folosească categoria validă *atunci*, nu cea curentă.
 - **Airflow și Metabase în profiluri Docker opt-in (`airflow`, `bi`), nu în `make up`** — Airflow consumă ~4GB RAM; separarea permite să lucrezi pe ingestie/dbt fără costul lor, pornindu-le explicit doar când ai nevoie.
+- **Idempotența la sursa GitHub aleasă per entitate, nu copiată din bank** — `raw.github_commits` e append-only cu dedup pe `(repo_full_name, sha)` ca `raw.bank_transactions`, dar `raw.github_repositories`/`raw.github_pull_requests` fac **upsert**: sunt entități mutabile (starea unui PR, `pushed_at`-ul unui repo), deci raw ține doar ultima stare cunoscută, nu un istoric. Detalii: [Extensibilitatea arhitecturii](docs/interview-notes.md#extensibilitatea-arhitecturii-pe-o-a-doua-sursă-după-faza-5).
+- **`fact_daily_productivity` e sparse (doar zile cu activitate), `mart_daily_finance_productivity` e dense (fiecare zi din intervalul activ)** — un fapt Kimball ține doar evenimente reale; un mart pentru corelații are nevoie de zerouri explicite, altfel o zi fără commit-uri ar lipsi din analiză în loc să fie un punct de date real.

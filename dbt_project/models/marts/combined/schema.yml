@@ -1,0 +1,21 @@
+version: 2
+
+models:
+  - name: mart_daily_finance_productivity
+    tests:
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          arguments:
+            min_value: 1
+    columns:
+      - name: date_key
+        tests: [unique, not_null]
+      - name: total_spending
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+      - name: commit_count
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0

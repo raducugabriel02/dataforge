@@ -20,6 +20,9 @@ x-airflow-common: &airflow-common
     DATAFORGE_DATA_DIR_FALLBACK: /opt/dataforge/data/sample
     DBT_PROJECT_DIR: /opt/dataforge/dbt_project
     DISCORD_WEBHOOK_URL: ${DISCORD_WEBHOOK_URL:-}
+    GITHUB_TOKEN: ${GITHUB_TOKEN:-}
+    GITHUB_USERNAME: ${GITHUB_USERNAME:-}
+    GITHUB_COMMITS_SINCE: ${GITHUB_COMMITS_SINCE:-}
   volumes:
     - ./dags:/opt/airflow/dags
     - airflow_logs:/opt/airflow/logs
