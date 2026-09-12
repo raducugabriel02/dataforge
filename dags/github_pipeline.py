@@ -25,6 +25,9 @@ from common import dbt_command, notify_discord_failure
     schedule="@daily",
     start_date=pendulum.datetime(2026, 1, 1, tz="Europe/Bucharest"),
     catchup=False,
+    # vezi bank_pipeline.py: dbt run/test nu e safe la executie concurenta pe
+    # acelasi schema Postgres, deci fortam runurile acestui DAG sa fie secventiale.
+    max_active_runs=1,
     tags=["github", "productivity"],
     default_args={"on_failure_callback": notify_discord_failure, "retries": 0},
 )

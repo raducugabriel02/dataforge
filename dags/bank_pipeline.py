@@ -28,6 +28,11 @@ BANKS = ["bt", "bcr", "ing"]
     schedule="@daily",
     start_date=pendulum.datetime(2026, 1, 1, tz="Europe/Bucharest"),
     catchup=False,
+    # dbt run/test nu sunt safe la executie concurenta pe acelasi schema Postgres
+    # (folosesc pattern-ul create+rename -> "__dbt_backup", care nu e process-safe) —
+    # fortam runurile sa se execute strict secvential, altfel doua DagRun-uri simultane
+    # (ex. dupa un catchup cu Docker oprit cateva zile) se pot ciocni pe aceeasi relatie.
+    max_active_runs=1,
     tags=["bank", "finance"],
     default_args={"on_failure_callback": notify_discord_failure, "retries": 0},
 )
