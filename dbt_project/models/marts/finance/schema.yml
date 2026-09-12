@@ -73,3 +73,12 @@ models:
               arguments:
                 min_value: -10000
                 max_value: 10000
+
+  - name: mart_monthly_spending
+    columns:
+      - name: month_start
+        tests: [unique, not_null]
+      - name: total_spending
+        tests: [not_null]
+      - name: total_income
+        tests: [not_null]

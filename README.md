@@ -148,7 +148,7 @@ UI la http://localhost:3000 — primul start cere setup: creezi contul de admin 
 | Username / Password | `POSTGRES_USER` / `POSTGRES_PASSWORD` din `.env` |
 | Use a secure connection (SSL) | **nebifat** — Postgres-ul local rulează fără SSL configurat |
 
-Dashboard-ul `Cheltuieli — Overview` (cheltuieli pe categorii, trend lunar cu medie mobilă 3 luni, top merchants) e construit direct în UI din `marts.*`, nu versionat în git — Metabase își ține definițiile în propriul app DB (H2), nu în fișiere.
+Dashboard-ul `Cheltuieli — Overview` (cheltuieli pe categorii, trend lunar cu medie mobilă 3 luni, top merchants, venituri vs cheltuieli pe lună, cumulative spending, sold în timp pe bancă, cheltuieli weekend vs weekday) e construit direct în UI din `marts.*`, nu versionat în git — Metabase își ține definițiile în propriul app DB (H2), nu în fișiere. Chart-urile de venituri/cashflow folosesc coloanele `total_income`/`net_cashflow` adăugate în `mart_monthly_spending`; cele de sold și weekend-vs-weekday sunt native SQL questions direct peste `marts.fact_financial_transactions`/`marts.dim_date`, fiindcă sunt vizualizări unice, fără nevoie de un model dbt reutilizabil.
 
 ```bash
 make bi-down
@@ -159,6 +159,8 @@ make bi-down
 | dbt lineage graph | Dashboard Metabase |
 |---|---|
 | ![dbt lineage](docs/screenshots/dbt-lineage.jpg) | ![Metabase dashboard](docs/screenshots/metabase-dashboard.jpg) |
+
+![Metabase dashboard, continuare](docs/screenshots/metabase-dashboard-2.jpg)
 
 ## Structură
 
