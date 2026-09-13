@@ -18,7 +18,7 @@ jobs:
           cache: "pip"
 
       - name: Instaleaza dependintele de dev
-        run: pip install -e ".[dev]"
+        run: pip install -e ".[dev,pdf]"
 
       - name: ruff
         run: ruff check .
@@ -60,8 +60,8 @@ jobs:
           python-version: "3.12"
           cache: "pip"
 
-      - name: Instaleaza dependintele (dev + dbt)
-        run: pip install -e ".[dev,dbt]"
+      - name: Instaleaza dependintele (dev + dbt + pdf)
+        run: pip install -e ".[dev,dbt,pdf]"
 
       # docker-compose.yml monteaza infra/postgres/init/ ca /docker-entrypoint-initdb.d,
       # rulat automat de imaginea postgres la primul start. Service container-ele din

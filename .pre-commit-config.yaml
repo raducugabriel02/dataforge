@@ -10,4 +10,13 @@ repos:
     rev: v1.11.2
     hooks:
       - id: mypy
-        exclude: ^(dbt_project/|data/)
+        exclude: ^(dbt_project/|data/|dags/)
+        # hook-ul mypy ruleaza intr-un venv izolat, fara pachetele proiectului —
+        # fara astea, ar raporta fals "import not found" pentru orice dependinta.
+        additional_dependencies:
+          - pydantic>=2.6
+          - loguru>=0.7
+          - tenacity>=8.2
+          - "psycopg[binary]>=3.1"
+          - httpx>=0.27
+          - pdfplumber>=0.11

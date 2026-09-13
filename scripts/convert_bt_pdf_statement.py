@@ -29,7 +29,7 @@ from pathlib import Path
 
 import pdfplumber
 
-_AMOUNT_RE = re.compile(r"^\d{1,3}(?:,\d{3})*\.\d{2}$")
+_AMOUNT_RE = re.compile(r"^\d+(?:,\d{3})*\.\d{2}$")
 _DATE_RE = re.compile(r"^(\d{2})/(\d{2})/(\d{4})\b")
 _AMOUNT_X_TOLERANCE = 40.0
 
@@ -74,7 +74,11 @@ class _PendingTxn:
     amount_side: str
 
 
-def extract_transactions(pdf_path: Path) -> list[dict[str, str]]:
+def _extract_from_pages(pages: list[list[_Row]]) -> list[dict[str, str]]:
+    """Motorul de extragere, separat de I/O-ul pdfplumber — primeste randuri deja
+    clusterizate (o lista de pagini, fiecare o lista de _Row) ca sa poata fi testat
+    cu randuri construite manual, fara sa aiba nevoie de un fisier PDF real.
+    """
     rows_out: list[dict[str, str]] = []
     debit_x0: float | None = None
     credit_x0: float | None = None
@@ -112,113 +116,118 @@ def extract_transactions(pdf_path: Path) -> list[dict[str, str]]:
         pending_txn = None
         pending_continuation = []
 
-    with pdfplumber.open(pdf_path) as pdf:
-        for page in pdf.pages:
-            words = page.extract_words(x_tolerance=1, y_tolerance=3)
-            rows = _cluster_rows(words)
-            header_seen = False
-            for row in rows:
-                if debit_x0 is None:
-                    for w in row.words:
-                        if w["text"] == "Debit":
-                            debit_x0 = float(w["x0"])
-                        elif w["text"] == "Credit":
-                            credit_x0 = float(w["x0"])
-
-                if not header_seen:
-                    if "Descriere" in row.text and "Debit" in row.text and "Credit" in row.text:
-                        header_seen = True
-                    continue
-
-                if "RULAJ TOTAL CONT" in row.text:
-                    stopped = True
-                    break
-
-                # Ordinea cuvintelor pe rand nu urmareste mereu x0 crescator (observat
-                # empiric: data sau eticheta pot aparea dupa suma). Cautam valorile
-                # oriunde in rand / in lista de cuvinte, nu presupunem o ordine fixa.
-                if "SOLD ANTERIOR" in row.text:
-                    flush()
-                    m = re.search(r"([\d]{1,3}(?:,\d{3})*\.\d{2})", row.text)
-                    if not m:
-                        raise StatementExtractionError(f"nu pot citi SOLD ANTERIOR: {row.text!r}")
-                    opening_balance = _to_decimal(m.group(1))
-                    running_balance = opening_balance
-                    continue
-
-                if "RULAJ ZI" in row.text:
-                    flush()
-                    continue
-
-                if "SOLD FINAL ZI" in row.text:
-                    flush()
-                    m = re.search(r"([\d]{1,3}(?:,\d{3})*\.\d{2})", row.text)
-                    if not m:
-                        raise StatementExtractionError(f"nu pot citi SOLD FINAL ZI: {row.text!r}")
-                    day_end = _to_decimal(m.group(1))
-                    if running_balance is None or running_balance != day_end:
-                        raise StatementExtractionError(
-                            f"sold calculat ({running_balance}) != SOLD FINAL ZI raportat "
-                            f"({day_end}) dupa {current_date} — extragerea a gresit ceva, "
-                            "nu continui cu date posibil corupte"
-                        )
-                    continue
-
-                # E randul care deschide o tranzactie noua (are suma in banda
-                # Debit/Credit) sau un rand de continuare (detalii/REF, fara suma)?
-                amount_word_obj = None
-                amount_side: str | None = None
+    for rows in pages:
+        header_seen = False
+        for row in rows:
+            if debit_x0 is None:
                 for w in row.words:
-                    token = str(w["text"])
-                    if not _AMOUNT_RE.match(token):
-                        continue
-                    x0 = float(w["x0"])
-                    if debit_x0 is not None and abs(x0 - debit_x0) < _AMOUNT_X_TOLERANCE:
-                        amount_word_obj, amount_side = w, "debit"
-                    elif credit_x0 is not None and abs(x0 - credit_x0) < _AMOUNT_X_TOLERANCE:
-                        amount_word_obj, amount_side = w, "credit"
+                    if w["text"] == "Debit":
+                        debit_x0 = float(w["x0"])
+                    elif w["text"] == "Credit":
+                        credit_x0 = float(w["x0"])
 
-                if amount_word_obj is None:
-                    # continuare a tranzactiei curente (REF, detalii multi-linie)
-                    if row.text:
-                        pending_continuation.append(row.text)
-                    continue
+            if not header_seen:
+                if "Descriere" in row.text and "Debit" in row.text and "Credit" in row.text:
+                    header_seen = True
+                continue
 
-                # rand nou de tranzactie: inchide tranzactia anterioara, incepe una noua
-                flush()
-                date_word_obj = None
-                for w in row.words:
-                    if _DATE_RE.match(str(w["text"])):
-                        date_word_obj = w
-                        break
-                if date_word_obj is not None:
-                    m = _DATE_RE.match(str(date_word_obj["text"]))
-                    assert m is not None
-                    current_date = f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
-
-                if running_balance is None or current_date is None:
-                    raise StatementExtractionError(
-                        f"tranzactie gasita inainte de SOLD ANTERIOR sau fara data: {row.text!r}"
-                    )
-
-                base_desc = " ".join(
-                    str(w["text"])
-                    for w in row.words
-                    if w is not amount_word_obj and w is not date_word_obj
-                ).strip()
-                pending_txn = _PendingTxn(
-                    date=current_date,
-                    base_desc=base_desc,
-                    amount_word=str(amount_word_obj["text"]),
-                    amount_side=amount_side or "debit",
-                )
-            if stopped:
+            if "RULAJ TOTAL CONT" in row.text:
+                stopped = True
                 break
+
+            # Ordinea cuvintelor pe rand nu urmareste mereu x0 crescator (observat
+            # empiric: data sau eticheta pot aparea dupa suma). Cautam valorile
+            # oriunde in rand / in lista de cuvinte, nu presupunem o ordine fixa.
+            if "SOLD ANTERIOR" in row.text:
+                flush()
+                m = re.search(r"(\d+(?:,\d{3})*\.\d{2})", row.text)
+                if not m:
+                    raise StatementExtractionError(f"nu pot citi SOLD ANTERIOR: {row.text!r}")
+                opening_balance = _to_decimal(m.group(1))
+                running_balance = opening_balance
+                continue
+
+            if "RULAJ ZI" in row.text:
+                flush()
+                continue
+
+            if "SOLD FINAL ZI" in row.text:
+                flush()
+                m = re.search(r"(\d+(?:,\d{3})*\.\d{2})", row.text)
+                if not m:
+                    raise StatementExtractionError(f"nu pot citi SOLD FINAL ZI: {row.text!r}")
+                day_end = _to_decimal(m.group(1))
+                if running_balance is None or running_balance != day_end:
+                    raise StatementExtractionError(
+                        f"sold calculat ({running_balance}) != SOLD FINAL ZI raportat "
+                        f"({day_end}) dupa {current_date} — extragerea a gresit ceva, "
+                        "nu continui cu date posibil corupte"
+                    )
+                continue
+
+            # E randul care deschide o tranzactie noua (are suma in banda
+            # Debit/Credit) sau un rand de continuare (detalii/REF, fara suma)?
+            amount_word_obj = None
+            amount_side: str | None = None
+            for w in row.words:
+                token = str(w["text"])
+                if not _AMOUNT_RE.match(token):
+                    continue
+                x0 = float(w["x0"])
+                if debit_x0 is not None and abs(x0 - debit_x0) < _AMOUNT_X_TOLERANCE:
+                    amount_word_obj, amount_side = w, "debit"
+                elif credit_x0 is not None and abs(x0 - credit_x0) < _AMOUNT_X_TOLERANCE:
+                    amount_word_obj, amount_side = w, "credit"
+
+            if amount_word_obj is None:
+                # continuare a tranzactiei curente (REF, detalii multi-linie)
+                if row.text:
+                    pending_continuation.append(row.text)
+                continue
+
+            # rand nou de tranzactie: inchide tranzactia anterioara, incepe una noua
+            flush()
+            date_word_obj = None
+            for w in row.words:
+                if _DATE_RE.match(str(w["text"])):
+                    date_word_obj = w
+                    break
+            if date_word_obj is not None:
+                m = _DATE_RE.match(str(date_word_obj["text"]))
+                assert m is not None
+                current_date = f"{m.group(1)}.{m.group(2)}.{m.group(3)}"
+
+            if running_balance is None or current_date is None:
+                raise StatementExtractionError(
+                    f"tranzactie gasita inainte de SOLD ANTERIOR sau fara data: {row.text!r}"
+                )
+
+            base_desc = " ".join(
+                str(w["text"])
+                for w in row.words
+                if w is not amount_word_obj and w is not date_word_obj
+            ).strip()
+            pending_txn = _PendingTxn(
+                date=current_date,
+                base_desc=base_desc,
+                amount_word=str(amount_word_obj["text"]),
+                amount_side=amount_side or "debit",
+            )
+        if stopped:
+            break
 
     flush()
     if opening_balance is None:
         raise StatementExtractionError("nu am gasit SOLD ANTERIOR in PDF — format neasteptat")
     return rows_out
+
+
+def extract_transactions(pdf_path: Path) -> list[dict[str, str]]:
+    with pdfplumber.open(pdf_path) as pdf:
+        pages = [
+            _cluster_rows(page.extract_words(x_tolerance=1, y_tolerance=3)) for page in pdf.pages
+        ]
+    return _extract_from_pages(pages)
 
 
 def convert(pdf_path: Path, csv_path: Path) -> int:
