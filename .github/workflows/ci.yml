@@ -37,16 +37,18 @@ jobs:
     services:
       # Postgres de test, izolat per job — porneste gol si dispare la final,
       # nu are nicio legatura cu Postgres-ul de dezvoltare din docker-compose.yml.
+      # `options` nu suporta expresii ${{ }} in Actions, deci credentialele sunt
+      # repetate aici ca literali, identice cu blocul `env:` al job-ului de mai sus.
       postgres:
         image: postgres:16
         env:
-          POSTGRES_USER: ${{ env.POSTGRES_USER }}
-          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
-          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+          POSTGRES_USER: dataforge
+          POSTGRES_PASSWORD: dataforge_ci_password
+          POSTGRES_DB: dataforge
         ports:
           - 5432:5432
         options: >-
-          --health-cmd "pg_isready -U ${{ env.POSTGRES_USER }} -d ${{ env.POSTGRES_DB }}"
+          --health-cmd "pg_isready -U dataforge -d dataforge"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
