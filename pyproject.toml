@@ -22,6 +22,11 @@ dbt = [
     "dbt-core>=1.8",
     "dbt-postgres>=1.8",
 ]
+pdf = [
+    # doar pentru scripts/convert_bt_pdf_statement.py — cand banca ofera extrasul
+    # numai in PDF, nu si CSV/Excel. Nu e folosit de pipeline-ul de productie.
+    "pdfplumber>=0.11",
+]
 
 [tool.setuptools.packages.find]
 include = ["ingestion*", "scripts*"]

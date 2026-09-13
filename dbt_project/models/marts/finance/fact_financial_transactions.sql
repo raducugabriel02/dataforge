@@ -7,15 +7,28 @@ merchant_rules as (
 ),
 
 -- one row per transaction, enriched with the merchant/category matched from
--- its description (may not have a match — left join, defaults applied below)
-categorized as (
+-- its description (may not have a match — left join, defaults applied below).
+-- O descriere reala poate contine mai multe pattern-uri deodata (ex: o linie
+-- de comision care mentioneaza si numele platformei de pariuri) — fara sa
+-- alegem un singur castigator determinist, tranzactia s-ar duplica aici
+-- (fan-out pe left join), nu doar categorisi gresit. Vezi acelasi tie-break
+-- (priority, apoi lungime pattern) ca in dim_merchant.sql.
+matched as (
     select
         transactions.*,
         coalesce(rules.merchant_name, 'Unknown') as merchant_name,
-        coalesce(rules.category_name, 'uncategorized') as category_name
+        coalesce(rules.category_name, 'uncategorized') as category_name,
+        row_number() over (
+            partition by transactions.transaction_id
+            order by coalesce(rules.priority, 999) asc, length(rules.pattern) desc
+        ) as rn
     from transactions
     left join merchant_rules as rules
         on transactions.description ilike '%' || rules.pattern || '%'
+),
+
+categorized as (
+    select * from matched where rn = 1
 ),
 
 dim_date as (

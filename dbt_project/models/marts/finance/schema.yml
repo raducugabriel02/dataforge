@@ -26,6 +26,10 @@ models:
                     "transfer",
                     "income",
                     "uncategorized",
+                    "gambling",
+                    "cash",
+                    "fees",
+                    "health",
                   ]
 
   - name: dim_expense_category

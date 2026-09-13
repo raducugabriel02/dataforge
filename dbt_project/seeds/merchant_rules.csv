@@ -1,24 +1,39 @@
-pattern,merchant_name,category_name
-LIDL,Lidl,groceries
-KAUFLAND,Kaufland,groceries
-CARREFOUR,Carrefour,groceries
-MEGA IMAGE,Mega Image,groceries
-PROFI,Profi,groceries
-ENGIE ROMANIA,Engie Romania,utilities
-ELECTRICA FURNIZARE,Electrica Furnizare,utilities
-DIGI ROMANIA,Digi Romania,utilities
-ORANGE ROMANIA,Orange Romania,utilities
-OMV PETROM,OMV Petrom,transport
-MOL ROMANIA,Mol Romania,transport
-STB SA,STB,transport
-UBER,Uber,transport
-GLOVO,Glovo,dining
-TAZZ,Tazz,dining
-MCDONALDS,McDonald's,dining
-STARBUCKS,Starbucks,dining
-NETFLIX,Netflix,entertainment
-SPOTIFY,Spotify,entertainment
-CINEMA CITY,Cinema City,entertainment
-STEAM,Steam,entertainment
-ANGAJATOR SRL,Angajator SRL,income
-RO49AAAA1B31007593840000,Transfer bancar,transfer
+pattern,merchant_name,category_name,priority
+LIDL,Lidl,groceries,100
+KAUFLAND,Kaufland,groceries,100
+CARREFOUR,Carrefour,groceries,100
+MEGA IMAGE,Mega Image,groceries,100
+PROFI,Profi,groceries,100
+ENGIE ROMANIA,Engie Romania,utilities,100
+ELECTRICA FURNIZARE,Electrica Furnizare,utilities,100
+DIGI ROMANIA,Digi Romania,utilities,100
+ORANGE ROMANIA,Orange Romania,utilities,100
+OMV PETROM,OMV Petrom,transport,100
+MOL ROMANIA,Mol Romania,transport,100
+STB SA,STB,transport,100
+UBER,Uber,transport,100
+GLOVO,Glovo,dining,100
+TAZZ,Tazz,dining,100
+MCDONALDS,McDonald's,dining,100
+STARBUCKS,Starbucks,dining,100
+NETFLIX,Netflix,entertainment,100
+SPOTIFY,Spotify,entertainment,100
+CINEMA CITY,Cinema City,entertainment,100
+STEAM,Steam,entertainment,100
+ANGAJATOR SRL,Angajator SRL,income,100
+RO49AAAA1B31007593840000,Transfer bancar,transfer,100
+COMIS.RIDICARE,Comision BT,fees,10
+TAXA SERVICIU,Taxa Serviciu BT,fees,10
+SUPERBET,Superbet,gambling,50
+NAPOLEONGAMES,NapoleonGames,gambling,50
+RETRAGERE DE NUMERAR,ATM BT (retragere numerar),cash,100
+DEPUNERE NUMERAR,ATM BT (depunere numerar),cash,100
+KFC,KFC,dining,100
+CFR CALATORI,CFR Calatori,transport,100
+GOOGLE PLAY,Google Play,entertainment,100
+DIOGYM,Diogym Orizont Fitness,health,100
+SUBVENTIE,Bursa/Subventie,income,100
+PAYMENT TO ANOTHER BANK,Transfer catre alt cont,transfer,100
+P2P BTPAY,BT Pay P2P,transfer,100
+INCASARE INSTANT,Incasare instant,transfer,100
+TRIMIS PRIN REVOLUT,Revolut P2P,transfer,100
