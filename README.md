@@ -1,5 +1,7 @@
 # DataForge
 
+[![CI](https://github.com/raducugabriel02/dataforge/actions/workflows/ci.yml/badge.svg)](https://github.com/raducugabriel02/dataforge/actions/workflows/ci.yml)
+
 Personal Data Platform & ELT Warehouse — ingest, transformare (medallion: Raw → Staging → Marts) și BI pentru date personale reale, orchestrat automat și rulabil integral local prin Docker Compose.
 
 Detalii complete despre scop, arhitectură, stack și plan pe faze: vezi [CLAUDE.md](CLAUDE.md).
@@ -8,7 +10,9 @@ Detalii complete despre scop, arhitectură, stack și plan pe faze: vezi [CLAUDE
 
 **Faza 0-4 (v1, sursa bancară) și Faza 5 (v2, sursa GitHub)** sunt complete, verificate live cu date reale. Peste plan, cu accent pe utilitate reală (nu doar narativ de portofoliu): dashboard Metabase extins (venituri/cashflow, sold pe bancă, weekend vs weekday) și **alerte financiare pe email** (buget pe categorie, sold sub prag, tranzacție mare) — vezi [Design Decisions](#design-decisions).
 
-**Faza 6 (v3, Strava/Google Fit + CI)** neîncepută — deprioritizată deliberat față de îmbunătățiri cu valoare reală imediată (sursa de fitness n-ar aduce nimic, autorul nu folosește Strava/Google Fit).
+**CI (GitHub Actions)** adăugat — `ruff`/`mypy` la fiecare push/PR, plus `pytest`/`dbt build` complet rulate împotriva unui Postgres de test izolat (nu Postgres-ul de dezvoltare din `docker-compose.yml`). Vezi [Design Decisions](#design-decisions).
+
+**Faza 6 (v3, Strava/Google Fit)** neîncepută — deprioritizată deliberat față de îmbunătățiri cu valoare reală imediată (sursa de fitness n-ar aduce nimic, autorul nu folosește Strava/Google Fit).
 
 ## Arhitectură
 
@@ -171,7 +175,8 @@ make bi-down
 ## Structură
 
 ```
-infra/postgres/init/   # schema SQL rulat automat la primul start al containerului
+.github/workflows/      # CI (GitHub Actions): ruff/mypy + pytest/dbt build pe Postgres de test
+infra/postgres/init/    # schema SQL rulat automat la primul start al containerului
 scripts/                # utilitare, ex: generatorul de date bancare fake
 ingestion/              # module Python de ingestie (bank: Faza 1, github: Faza 5)
 dbt_project/            # staging + marts + seeds + snapshots (bank: Faza 2, github: Faza 5)
@@ -199,3 +204,4 @@ Versiune scurtă a deciziilor de arhitectură; explicațiile complete, construit
 - **`fact_daily_productivity` e sparse (doar zile cu activitate), `mart_daily_finance_productivity` e dense (fiecare zi din intervalul activ)** — un fapt Kimball ține doar evenimente reale; un mart pentru corelații are nevoie de zerouri explicite, altfel o zi fără commit-uri ar lipsi din analiză în loc să fie un punct de date real.
 - **Alertele pe email sunt best-effort, nu o precondiție a pipeline-ului** — la fel ca alerta Discord de eșec (`dags/common.py`), `check_alerts` prinde orice excepție la trimiterea emailului și doar o loghează; task-ul reușește chiar dacă SMTP-ul e nesetat sau serverul de mail e jos. Diferă totuși de eșecul unui test dbt: un test dbt picat înseamnă *date suspecte*, deci pipeline-ul trebuie să se oprească; o alertă netrimisă înseamnă doar *n-am reușit să te anunț*, datele rămân corecte — nu-i același nivel de gravitate, deci nu tratăm eșecul la fel.
 - **`mart_budget_alerts` e un mart separat, nu extinde `mart_monthly_spending`** — grain-ul diferă (doar categoriile cu buget definit, via inner join pe seed-ul `category_budgets`) și scopul e altul (verificare operațională, nu raportare generală); un mart de agregare Kimball nu trebuie să devină locul unde bag orice query are nevoie de el.
+- **CI rulează pe un Postgres de test efemer (service container), nu pe Postgres-ul din `docker-compose.yml`** — job-ul de `test` pornește un `postgres:16` gol, îl inițializează cu aceleași SQL-uri din `infra/postgres/init/`, generează date sintetice, le ingerează și rulează `pytest`+`dbt build` complet peste el; containerul dispare la finalul job-ului. Așa CI verifică repo-ul așa cum ar arăta la un `git clone` proaspăt, nu peste starea locală acumulată a autorului. Service container-ele din Actions pornesc *înainte* de `actions/checkout`, deci nu poți monta `infra/postgres/init/` ca `/docker-entrypoint-initdb.d` (fișierele repo-ului încă nu există pe disc la acel moment) — scripturile SQL sunt rulate explicit, ca pas separat, după checkout.

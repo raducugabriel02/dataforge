@@ -1,0 +1,91 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Instaleaza dependintele de dev
+        run: pip install -e ".[dev]"
+
+      - name: ruff
+        run: ruff check .
+
+      - name: mypy
+        run: mypy .
+
+  test:
+    runs-on: ubuntu-latest
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: dataforge
+      POSTGRES_PASSWORD: dataforge_ci_password
+      POSTGRES_DB: dataforge
+    services:
+      # Postgres de test, izolat per job — porneste gol si dispare la final,
+      # nu are nicio legatura cu Postgres-ul de dezvoltare din docker-compose.yml.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: ${{ env.POSTGRES_USER }}
+          POSTGRES_PASSWORD: ${{ env.POSTGRES_PASSWORD }}
+          POSTGRES_DB: ${{ env.POSTGRES_DB }}
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U ${{ env.POSTGRES_USER }} -d ${{ env.POSTGRES_DB }}"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Instaleaza dependintele (dev + dbt)
+        run: pip install -e ".[dev,dbt]"
+
+      # docker-compose.yml monteaza infra/postgres/init/ ca /docker-entrypoint-initdb.d,
+      # rulat automat de imaginea postgres la primul start. Service container-ele din
+      # Actions pornesc INAINTE de checkout (fisierele repo-ului inca nu exista pe disc),
+      # deci acelasi montaj ar vedea un director gol — rulam scripturile explicit aici,
+      # dupa checkout, cu acelasi efect (CREATE SCHEMA/TABLE IF NOT EXISTS, deci idempotent).
+      - name: Creeaza schemele si tabelele raw
+        run: |
+          for f in infra/postgres/init/*.sql; do
+            PGPASSWORD="$POSTGRES_PASSWORD" psql -h localhost -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Genereaza date bancare sintetice
+        run: python -m scripts.generate_fake_bank_data --bank all --months 6
+
+      - name: Ingest (idempotent) in raw.bank_transactions
+        run: |
+          python -m ingestion --bank bt data/sample/bt_statement.csv
+          python -m ingestion --bank bcr data/sample/bcr_statement.csv
+          python -m ingestion --bank ing data/sample/ing_statement.csv
+
+      - name: pytest (unit + integration, Postgres-ul de test e disponibil)
+        run: pytest -v
+
+      - name: dbt deps
+        run: dbt deps --project-dir dbt_project --profiles-dir dbt_project
+
+      - name: dbt build
+        run: dbt build --project-dir dbt_project --profiles-dir dbt_project
