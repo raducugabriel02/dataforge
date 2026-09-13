@@ -6,9 +6,9 @@ Detalii complete despre scop, arhitectură, stack și plan pe faze: vezi [CLAUDE
 
 ## Status
 
-**Faza 4 — Metabase + polish v1** (completă). Postgres + ingestie idempotentă (Faza 1) + proiect dbt complet (Faza 2) + orchestrare Airflow (Faza 3) + dashboard Metabase peste `marts.*` (cheltuieli pe categorii, trend lunar, top merchants). v1 (sursa bancară) e completă.
+**Faza 0-4 (v1, sursa bancară) și Faza 5 (v2, sursa GitHub)** sunt complete, verificate live cu date reale. Peste plan, cu accent pe utilitate reală (nu doar narativ de portofoliu): dashboard Metabase extins (venituri/cashflow, sold pe bancă, weekend vs weekday) și **alerte financiare pe email** (buget pe categorie, sold sub prag, tranzacție mare) — vezi [Design Decisions](#design-decisions).
 
-**Faza 5 (v2) — sursa GitHub, în lucru.** Client REST paginat + retry pe rate limit, `raw.github_*`, staging + marts de productivitate (`dim_repository`, `fact_daily_productivity`), mart combinat finanțe×productivitate, DAG Airflow `github_pipeline`. Cod complet și verificat live (date sintetice + `dbt build`/`airflow tasks test`); rularea reală așteaptă un `GITHUB_TOKEN` propriu în `.env`. Rămân: polish README/interview-notes (în lucru chiar acum).
+**Faza 6 (v3, Strava/Google Fit + CI)** neîncepută — deprioritizată deliberat față de îmbunătățiri cu valoare reală imediată (sursa de fitness n-ar aduce nimic, autorul nu folosește Strava/Google Fit).
 
 ## Arhitectură
 
@@ -33,11 +33,13 @@ flowchart LR
         snapshot[("staging.expense_categories_snapshot<br/>SCD2")]
         marts[("marts.*<br/>facts + dims Kimball")]
         combined[("marts.mart_daily_finance_productivity")]
+        budgetmart[("marts.mart_budget_alerts")]
     end
 
     subgraph orch["Airflow — profil 'airflow'"]
         dag["bank_pipeline DAG<br/>TaskFlow API"]
         ghdag["github_pipeline DAG<br/>TaskFlow API, dynamic mapping"]
+        alertcheck["check_alerts<br/>AlertChecker + EmailSender"]
         afdb[("Postgres<br/>metadata Airflow")]
     end
 
@@ -52,9 +54,13 @@ flowchart LR
     ghraw --> staging
     staging --> snapshot --> marts
     marts --> combined
+    marts --> budgetmart
     marts --> dash
     dag -. orchestrează .-> parser
     dag -. "dbt run/test tag:bank" .-> staging
+    dag -. "după dbt_test, best-effort" .-> alertcheck
+    alertcheck -. query .-> budgetmart
+    alertcheck -. "email (SMTP)" .-> email[/"Inbox"/]
     ghdag -. orchestrează .-> ghclient
     ghdag -. "dbt run/test tag:github,combined" .-> staging
     dag --- afdb
@@ -121,10 +127,10 @@ make airflow-logs
 
 UI la http://localhost:8080 (user/parolă din `AIRFLOW_ADMIN_USER`/`AIRFLOW_ADMIN_PASSWORD`, implicit `admin`/`admin`). Două DAG-uri, zilnice, fiecare cu propria alertă Discord la eșec (`dags/common.py`, folosit de amândouă):
 
-- **`bank_pipeline`** — verifică `data/private/` (fallback `data/sample/`) pentru CSV-uri noi, le ingerează idempotent, apoi `dbt seed → snapshot → run → test` (tag `bank`).
+- **`bank_pipeline`** — verifică `data/private/` (fallback `data/sample/`) pentru CSV-uri noi, le ingerează idempotent, apoi `dbt seed → snapshot → run → test` (tag `bank`), apoi `check_alerts` — rulează `AlertChecker` (buget depășit pe categorie, sold sub prag, tranzacție neobișnuit de mare) și trimite un email consolidat dacă ceva s-a declanșat.
 - **`github_pipeline`** (Faza 5) — ingerează repos, apoi (dynamic task mapping, un task per repo) commit-uri + PR-uri, apoi `dbt run/test` pe `tag:github` + `tag:combined` (reconstruiește și mart-ul combinat finanțe×productivitate). Cere `GITHUB_TOKEN`/`GITHUB_USERNAME` completate în `.env` — altfel task-ul de ingest eșuează cu un mesaj clar, nu silențios.
 
-Un test dbt picat oprește pipeline-ul respectiv.
+Un test dbt picat oprește pipeline-ul respectiv. `check_alerts` e diferit: e best-effort — completează `SMTP_USER`/`SMTP_PASSWORD`/`ALERT_EMAIL_TO` în `.env` (Gmail cere un [App Password](https://myaccount.google.com/apppasswords), nu parola de cont) ca să chiar primești email; necompletat, task-ul tot rulează și reușește, doar sare peste trimitere (vezi [Design Decisions](#design-decisions)).
 
 ```bash
 make airflow-down   # oprește doar serviciile Airflow, Postgres-ul de date rămâne pornit separat
@@ -191,3 +197,5 @@ Versiune scurtă a deciziilor de arhitectură; explicațiile complete, construit
 - **Airflow și Metabase în profiluri Docker opt-in (`airflow`, `bi`), nu în `make up`** — Airflow consumă ~4GB RAM; separarea permite să lucrezi pe ingestie/dbt fără costul lor, pornindu-le explicit doar când ai nevoie.
 - **Idempotența la sursa GitHub aleasă per entitate, nu copiată din bank** — `raw.github_commits` e append-only cu dedup pe `(repo_full_name, sha)` ca `raw.bank_transactions`, dar `raw.github_repositories`/`raw.github_pull_requests` fac **upsert**: sunt entități mutabile (starea unui PR, `pushed_at`-ul unui repo), deci raw ține doar ultima stare cunoscută, nu un istoric. Detalii: [Extensibilitatea arhitecturii](docs/interview-notes.md#extensibilitatea-arhitecturii-pe-o-a-doua-sursă-după-faza-5).
 - **`fact_daily_productivity` e sparse (doar zile cu activitate), `mart_daily_finance_productivity` e dense (fiecare zi din intervalul activ)** — un fapt Kimball ține doar evenimente reale; un mart pentru corelații are nevoie de zerouri explicite, altfel o zi fără commit-uri ar lipsi din analiză în loc să fie un punct de date real.
+- **Alertele pe email sunt best-effort, nu o precondiție a pipeline-ului** — la fel ca alerta Discord de eșec (`dags/common.py`), `check_alerts` prinde orice excepție la trimiterea emailului și doar o loghează; task-ul reușește chiar dacă SMTP-ul e nesetat sau serverul de mail e jos. Diferă totuși de eșecul unui test dbt: un test dbt picat înseamnă *date suspecte*, deci pipeline-ul trebuie să se oprească; o alertă netrimisă înseamnă doar *n-am reușit să te anunț*, datele rămân corecte — nu-i același nivel de gravitate, deci nu tratăm eșecul la fel.
+- **`mart_budget_alerts` e un mart separat, nu extinde `mart_monthly_spending`** — grain-ul diferă (doar categoriile cu buget definit, via inner join pe seed-ul `category_budgets`) și scopul e altul (verificare operațională, nu raportare generală); un mart de agregare Kimball nu trebuie să devină locul unde bag orice query are nevoie de el.
