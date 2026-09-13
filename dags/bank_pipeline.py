@@ -104,12 +104,25 @@ def bank_pipeline() -> None:
     def dbt_test() -> str:
         return dbt_command("test", "bank")
 
+    @task
+    def check_alerts() -> str:
+        """Ruleaza dupa ce dbt_test a trecut — alertele financiare (buget,
+        sold, tranzactie mare) sunt un extra peste un pipeline deja sanatos,
+        nu o precondifie a lui. Best-effort: o eroare la trimiterea emailului
+        nu pica task-ul (vezi EmailSender), doar o eroare de query Postgres ar.
+        """
+        from ingestion.alerts import run_and_notify
+        from ingestion.logging_setup import configure_logging
+
+        configure_logging()
+        return run_and_notify()
+
     sources = check_source()
     # dynamic task mapping: cate un task `ingest` per fisier gasit, in paralel,
     # in loc de un task fix per banca — se adapteaza automat la cate fisiere exista.
     ingested = ingest.expand(source=sources)
 
-    ingested >> dbt_seed() >> dbt_snapshot() >> dbt_run() >> dbt_test()
+    ingested >> dbt_seed() >> dbt_snapshot() >> dbt_run() >> dbt_test() >> check_alerts()
 
 
 bank_pipeline()

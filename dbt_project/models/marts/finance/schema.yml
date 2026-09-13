@@ -82,3 +82,20 @@ models:
         tests: [not_null]
       - name: total_income
         tests: [not_null]
+
+  - name: mart_budget_alerts
+    columns:
+      - name: category_name
+        tests: [not_null]
+      - name: month_start
+        tests: [not_null]
+      - name: monthly_budget_ron
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                strictly: true
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [category_name, month_start]
