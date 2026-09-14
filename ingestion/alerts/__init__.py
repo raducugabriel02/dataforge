@@ -23,15 +23,12 @@ def run_and_notify() -> str:
         low_balance_threshold_ron=alert_config.low_balance_threshold_ron,
         large_transaction_threshold_ron=alert_config.large_transaction_threshold_ron,
     )
-    messages = checker.check_all()
+    alerts = checker.check_all()
 
-    if not messages:
+    if not alerts:
         logger.info("no_alerts_triggered")
         return "0 alerte declansate"
 
-    body = "\n".join(f"- {message}" for message in messages)
-    EmailSender(alert_config).send(
-        subject=f"DataForge — {len(messages)} alerta(e) financiara(e)",
-        body=body,
-    )
-    return f"{len(messages)} alerte trimise: " + "; ".join(messages)
+    EmailSender(alert_config).send_alerts(alerts)
+    messages = [alert.message for alert in alerts]
+    return f"{len(alerts)} alerte trimise: " + "; ".join(messages)

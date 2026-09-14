@@ -1,9 +1,30 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
+from typing import Literal
+
 import psycopg
 from psycopg.rows import dict_row
 
 from ingestion.config import PostgresConfig
+
+AlertCategory = Literal["buget", "sold", "tranzactie_mare"]
+
+
+@dataclass(frozen=True)
+class Alert:
+    category: AlertCategory
+    message: str
+
+
+# codul de banca e stocat lowercase (identificator tehnic, folosit si la join-uri
+# si filtre) — pentru afisare intr-un email catre un om, vrem numele obisnuit.
+_BANK_DISPLAY_NAMES = {"bt": "BT", "bcr": "BCR", "ing": "ING"}
+
+
+def _display_bank(source_bank: str) -> str:
+    return _BANK_DISPLAY_NAMES.get(source_bank, source_bank.upper())
+
 
 _OVER_BUDGET_SQL = """
     select category_name, monthly_budget_ron, actual_spending, pct_of_budget
@@ -50,41 +71,56 @@ class AlertChecker:
         self._low_balance_threshold_ron = low_balance_threshold_ron
         self._large_transaction_threshold_ron = large_transaction_threshold_ron
 
-    def check_all(self) -> list[str]:
+    def check_all(self) -> list[Alert]:
         return [
             *self._over_budget_categories(),
             *self._low_balance_accounts(),
             *self._large_transactions(),
         ]
 
-    def _over_budget_categories(self) -> list[str]:
+    def _over_budget_categories(self) -> list[Alert]:
         rows = self._query(_OVER_BUDGET_SQL)
         return [
-            f"Categoria '{row['category_name']}' e peste buget: "
-            f"{row['actual_spending']:.2f} RON din {row['monthly_budget_ron']:.2f} RON "
-            f"({row['pct_of_budget']:.0f}%)"
+            Alert(
+                category="buget",
+                message=(
+                    f"Categoria '{row['category_name']}' este peste buget: "
+                    f"{row['actual_spending']:.2f} RON din {row['monthly_budget_ron']:.2f} RON "
+                    f"({row['pct_of_budget']:.0f}%)"
+                ),
+            )
             for row in rows
         ]
 
-    def _low_balance_accounts(self) -> list[str]:
+    def _low_balance_accounts(self) -> list[Alert]:
         rows = self._query(_LATEST_BALANCE_SQL)
         alerts = []
         for row in rows:
             balance = float(row["balance_after"])  # type: ignore[arg-type]
             if balance < self._low_balance_threshold_ron:
                 alerts.append(
-                    f"Sold {row['source_bank']} sub prag: {balance:.2f} RON "
-                    f"(prag {self._low_balance_threshold_ron:.2f} RON)"
+                    Alert(
+                        category="sold",
+                        message=(
+                            f"Sold {_display_bank(row['source_bank'])} sub prag: "  # type: ignore[arg-type]
+                            f"{balance:.2f} RON (prag {self._low_balance_threshold_ron:.2f} RON)"
+                        ),
+                    )
                 )
         return alerts
 
-    def _large_transactions(self) -> list[str]:
+    def _large_transactions(self) -> list[Alert]:
         rows = self._query(
             _LARGE_TRANSACTIONS_SQL, {"threshold": self._large_transaction_threshold_ron}
         )
         return [
-            f"Tranzactie neobisnuit de mare la {row['source_bank']}: "
-            f"{-float(row['amount']):.2f} RON — {row['description']}"  # type: ignore[arg-type]
+            Alert(
+                category="tranzactie_mare",
+                message=(
+                    f"Tranzacție neobișnuită de mare la {_display_bank(row['source_bank'])}: "  # type: ignore[arg-type]
+                    f"{-float(row['amount']):.2f} RON — {row['description']}"  # type: ignore[arg-type]
+                ),
+            )
             for row in rows
         ]
 

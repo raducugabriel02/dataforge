@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import pytest
 
-from ingestion.alerts.checker import AlertChecker
+from ingestion.alerts.checker import Alert, AlertChecker, _display_bank
 from ingestion.config import PostgresConfig
 
 
@@ -40,7 +40,12 @@ def test_over_budget_categories_formats_message(
 
     alerts = checker._over_budget_categories()
 
-    assert alerts == ["Categoria 'groceries' e peste buget: 1650.50 RON din 1500.00 RON (110%)"]
+    assert alerts == [
+        Alert(
+            category="buget",
+            message="Categoria 'groceries' este peste buget: 1650.50 RON din 1500.00 RON (110%)",
+        )
+    ]
 
 
 def test_over_budget_categories_empty_returns_no_alerts(
@@ -62,7 +67,9 @@ def test_low_balance_accounts_below_threshold_alerts(
 
     alerts = checker._low_balance_accounts()
 
-    assert alerts == ["Sold bt sub prag: 150.00 RON (prag 200.00 RON)"]
+    assert alerts == [
+        Alert(category="sold", message="Sold BT sub prag: 150.00 RON (prag 200.00 RON)")
+    ]
 
 
 def test_low_balance_accounts_above_threshold_is_silent(
@@ -90,17 +97,25 @@ def test_large_transactions_formats_message(
 
     alerts = checker._large_transactions()
 
-    assert alerts == ["Tranzactie neobisnuit de mare la bt: 1500.00 RON — ELECTRONICE SRL"]
+    assert alerts == [
+        Alert(
+            category="tranzactie_mare",
+            message="Tranzacție neobișnuită de mare la BT: 1500.00 RON — ELECTRONICE SRL",
+        )
+    ]
 
 
 def test_check_all_aggregates_in_order(
     checker: AlertChecker, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    monkeypatch.setattr(checker, "_over_budget_categories", lambda: ["over-budget"])
-    monkeypatch.setattr(checker, "_low_balance_accounts", lambda: ["low-balance"])
-    monkeypatch.setattr(checker, "_large_transactions", lambda: ["large-txn"])
+    over_budget = Alert(category="buget", message="over-budget")
+    low_balance = Alert(category="sold", message="low-balance")
+    large_txn = Alert(category="tranzactie_mare", message="large-txn")
+    monkeypatch.setattr(checker, "_over_budget_categories", lambda: [over_budget])
+    monkeypatch.setattr(checker, "_low_balance_accounts", lambda: [low_balance])
+    monkeypatch.setattr(checker, "_large_transactions", lambda: [large_txn])
 
-    assert checker.check_all() == ["over-budget", "low-balance", "large-txn"]
+    assert checker.check_all() == [over_budget, low_balance, large_txn]
 
 
 def test_check_all_with_no_alerts_returns_empty_list(
@@ -109,3 +124,13 @@ def test_check_all_with_no_alerts_returns_empty_list(
     monkeypatch.setattr(checker, "_query", lambda sql, params=None: [])
 
     assert checker.check_all() == []
+
+
+def test_display_bank_uses_known_uppercase_name() -> None:
+    assert _display_bank("bt") == "BT"
+    assert _display_bank("bcr") == "BCR"
+    assert _display_bank("ing") == "ING"
+
+
+def test_display_bank_falls_back_to_uppercased_code() -> None:
+    assert _display_bank("revolut") == "REVOLUT"
