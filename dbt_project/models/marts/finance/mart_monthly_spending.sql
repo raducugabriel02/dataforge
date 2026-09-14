@@ -19,14 +19,18 @@ monthly as (
 
 select
     month_start,
-    total_spending,
-    total_income,
-    total_income - total_spending as net_cashflow,
-    sum(total_spending) over (order by month_start) as cumulative_spending,
-    avg(total_spending) over (
-        order by month_start
-        rows between 2 preceding and current row
+    cast(total_spending as numeric(14, 2)) as total_spending,
+    cast(total_income as numeric(14, 2)) as total_income,
+    cast(total_income - total_spending as numeric(14, 2)) as net_cashflow,
+    cast(sum(total_spending) over (order by month_start) as numeric(14, 2)) as cumulative_spending,
+    cast(
+        avg(total_spending) over (
+            order by month_start
+            rows between 2 preceding and current row
+        ) as numeric(14, 2)
     ) as rolling_3_month_avg,
-    total_spending - lag(total_spending) over (order by month_start) as delta_vs_previous_month
+    cast(
+        total_spending - lag(total_spending) over (order by month_start) as numeric(14, 2)
+    ) as delta_vs_previous_month
 from monthly
 order by month_start

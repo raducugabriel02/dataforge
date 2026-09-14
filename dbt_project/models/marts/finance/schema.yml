@@ -33,24 +33,47 @@ models:
                   ]
 
   - name: dim_expense_category
+    # Contract: forma SCD2 (category_key/valid_from/valid_to/is_current) e
+    # citita direct de fact_financial_transactions.sql printr-un join
+    # point-in-time — o redenumire sau schimbare de tip aici ar trece
+    # neobservata de dbt daca modelul consumator nu refera explicit coloana
+    # in select, dar pica direct build-ul cu contractul activat.
+    config:
+      contract:
+        enforced: true
     columns:
       - name: category_key
+        data_type: text
         tests: [unique, not_null]
+      - name: category_name
+        data_type: text
       - name: category_group
+        data_type: text
         tests:
           - accepted_values:
               arguments:
                 values: ["essential", "discretionary", "transfer", "income", "uncategorized"]
+      - name: valid_from
+        data_type: timestamp without time zone
+      - name: valid_to
+        data_type: timestamp without time zone
+      - name: is_current
+        data_type: boolean
 
   - name: fact_financial_transactions
+    config:
+      contract:
+        enforced: true
     tests:
       - dbt_expectations.expect_table_row_count_to_be_between:
           arguments:
             min_value: 1
     columns:
       - name: transaction_id
+        data_type: text
         tests: [unique, not_null]
       - name: date_key
+        data_type: text
         tests:
           - not_null
           - relationships:
@@ -58,6 +81,7 @@ models:
                 to: ref('dim_date')
                 field: date_key
       - name: merchant_key
+        data_type: text
         tests:
           - not_null
           - relationships:
@@ -65,40 +89,83 @@ models:
                 to: ref('dim_merchant')
                 field: merchant_key
       - name: category_key
+        data_type: text
         tests:
           - not_null
           - relationships:
               arguments:
                 to: ref('dim_expense_category')
                 field: category_key
+      - name: source_bank
+        data_type: text
+      - name: description
+        data_type: text
       - name: amount
+        data_type: numeric(12,2)
         tests:
           - dbt_expectations.expect_column_values_to_be_between:
               arguments:
                 min_value: -10000
                 max_value: 10000
+      - name: balance_after
+        data_type: numeric(12,2)
+      - name: currency
+        data_type: text
 
   - name: mart_monthly_spending
+    # Contract: consumat direct de Metabase (dashboard "Cheltuieli — Overview")
+    # — o coloana redenumita aici ar rupe o intrebare Metabase silentios
+    # (Metabase nu ruleaza teste dbt), nu doar un model downstream.
+    config:
+      contract:
+        enforced: true
     columns:
       - name: month_start
+        data_type: date
         tests: [unique, not_null]
       - name: total_spending
+        data_type: numeric(14,2)
         tests: [not_null]
       - name: total_income
+        data_type: numeric(14,2)
         tests: [not_null]
+      - name: net_cashflow
+        data_type: numeric(14,2)
+      - name: cumulative_spending
+        data_type: numeric(14,2)
+      - name: rolling_3_month_avg
+        data_type: numeric(14,2)
+      - name: delta_vs_previous_month
+        data_type: numeric(14,2)
 
   - name: mart_budget_alerts
+    # Contract: singurul mart citit prin SQL brut din Python
+    # (ingestion/alerts/checker.py), nu doar din alte modele dbt — un
+    # dbt test normal n-ar prinde o redenumire de coloana aici, doar o
+    # eroare de runtime in AlertChecker. Contractul o prinde la `dbt build`.
+    config:
+      contract:
+        enforced: true
     columns:
       - name: category_name
+        data_type: text
         tests: [not_null]
       - name: month_start
+        data_type: date
         tests: [not_null]
       - name: monthly_budget_ron
+        data_type: integer
         tests:
           - dbt_expectations.expect_column_values_to_be_between:
               arguments:
                 min_value: 0
                 strictly: true
+      - name: actual_spending
+        data_type: numeric(14,2)
+      - name: is_over_budget
+        data_type: boolean
+      - name: pct_of_budget
+        data_type: numeric(14,2)
     tests:
       - dbt_utils.unique_combination_of_columns:
           arguments:

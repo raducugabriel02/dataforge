@@ -1,0 +1,154 @@
+version: 2
+
+unit_tests:
+  - name: test_dim_merchant_priority_tiebreak_picks_highest_priority_rule
+    description: >
+      O descriere reala se poate potrivi cu mai multe reguli deodata (ex:
+      un comision de retragere care mentioneaza si Superbet). dim_merchant
+      trebuie sa aleaga exact perechea (merchant, categorie) a regulii cu
+      prioritatea cea mai mare (numar mai mic), nu prima/ultima alfabetic.
+    model: dim_merchant
+    given:
+      - input: ref('stg_bank__transactions')
+        rows:
+          - transaction_id: "txn_1"
+            source_bank: "bt"
+            txn_date: "2026-07-10"
+            description: "COMIS.RIDICARE NUMERAR SUPERBET AGENTIE 5"
+            amount: -5.00
+            balance_after: 995.00
+            _source_row_number: 1
+            _source_file: "extras.csv"
+            _loaded_at: "2026-07-10 08:00:00"
+      - input: ref('merchant_rules')
+        rows:
+          - pattern: "SUPERBET"
+            merchant_name: "Superbet"
+            category_name: "gambling"
+            priority: 50
+          - pattern: "COMIS.RIDICARE"
+            merchant_name: "Comision BT"
+            category_name: "fees"
+            priority: 10
+    expect:
+      rows:
+        - merchant_name: "Comision BT"
+          default_category_name: "fees"
+
+  - name: test_fact_transactions_priority_tiebreak_prevents_fanout
+    description: >
+      Regresie directa pentru bug-ul gasit pe date reale: o descriere care
+      se potriveste cu doua reguli deodata nu trebuie sa produca doua
+      randuri pentru aceeasi tranzactie (fan-out pe left join), ci exact
+      unul, cu categoria regulii de prioritate mai mare.
+    model: fact_financial_transactions
+    given:
+      - input: ref('stg_bank__transactions')
+        rows:
+          - transaction_id: "txn_1"
+            source_bank: "bt"
+            txn_date: "2026-07-10"
+            description: "COMIS.RIDICARE NUMERAR SUPERBET AGENTIE 5"
+            amount: -5.00
+            balance_after: 995.00
+            _source_row_number: 1
+            _source_file: "extras.csv"
+            _loaded_at: "2026-07-10 08:00:00"
+      - input: ref('merchant_rules')
+        rows:
+          - pattern: "SUPERBET"
+            merchant_name: "Superbet"
+            category_name: "gambling"
+            priority: 50
+          - pattern: "COMIS.RIDICARE"
+            merchant_name: "Comision BT"
+            category_name: "fees"
+            priority: 10
+      - input: ref('dim_date')
+        rows:
+          - date_day: "2026-07-10"
+            date_key: "dk_20260710"
+      - input: ref('dim_merchant')
+        rows:
+          - merchant_name: "Comision BT"
+            merchant_key: "mk_comision_bt"
+            default_category_name: "fees"
+      - input: ref('dim_expense_category')
+        rows:
+          - category_name: "fees"
+            category_key: "ck_fees_current"
+            category_group: "essential"
+            valid_from: "2026-01-01"
+            valid_to: "9999-12-31"
+            is_current: true
+    expect:
+      rows:
+        - transaction_id: "txn_1"
+          date_key: "dk_20260710"
+          merchant_key: "mk_comision_bt"
+          category_key: "ck_fees_current"
+          source_bank: "bt"
+          description: "COMIS.RIDICARE NUMERAR SUPERBET AGENTIE 5"
+          amount: -5.00
+          balance_after: 995.00
+          currency: "RON"
+
+  - name: test_fact_transactions_scd2_point_in_time_category_join
+    description: >
+      Regresie directa pentru capcana SCD2 valid_from gasita la incarcarea
+      datelor reale: o tranzactie veche trebuie sa primeasca versiunea
+      categoriei care era ACTIVA la data tranzactiei, nu versiunea curenta
+      — chiar daca versiunea curenta exista deja in dim_expense_category.
+    model: fact_financial_transactions
+    given:
+      - input: ref('stg_bank__transactions')
+        rows:
+          - transaction_id: "txn_2"
+            source_bank: "bt"
+            txn_date: "2026-02-15"
+            description: "SUPERBET PARIU ONLINE"
+            amount: -20.00
+            balance_after: 500.00
+            _source_row_number: 1
+            _source_file: "extras.csv"
+            _loaded_at: "2026-02-15 08:00:00"
+      - input: ref('merchant_rules')
+        rows:
+          - pattern: "SUPERBET"
+            merchant_name: "Superbet"
+            category_name: "gambling"
+            priority: 50
+      - input: ref('dim_date')
+        rows:
+          - date_day: "2026-02-15"
+            date_key: "dk_20260215"
+      - input: ref('dim_merchant')
+        rows:
+          - merchant_name: "Superbet"
+            merchant_key: "mk_superbet"
+            default_category_name: "gambling"
+      - input: ref('dim_expense_category')
+        rows:
+          - category_name: "gambling"
+            category_key: "ck_gambling_v1_old"
+            category_group: "discretionary"
+            valid_from: "2026-01-01"
+            valid_to: "2026-06-01"
+            is_current: false
+          - category_name: "gambling"
+            category_key: "ck_gambling_v2_current"
+            category_group: "discretionary"
+            valid_from: "2026-06-01"
+            valid_to: "9999-12-31"
+            is_current: true
+    expect:
+      rows:
+        - transaction_id: "txn_2"
+          date_key: "dk_20260215"
+          merchant_key: "mk_superbet"
+          category_key: "ck_gambling_v1_old"
+          source_bank: "bt"
+          description: "SUPERBET PARIU ONLINE"
+          amount: -20.00
+          balance_after: 500.00
+          currency: "RON"

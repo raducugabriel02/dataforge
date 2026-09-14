@@ -1,0 +1,43 @@
+version: 2
+
+exposures:
+  - name: metabase_cheltuieli_overview
+    label: "Cheltuieli — Overview (Metabase)"
+    type: dashboard
+    maturity: medium
+    url: http://localhost:3000
+    description: >
+      Dashboard Metabase cu cheltuieli pe categorii, trend lunar (medie
+      mobila 3 luni, cumulative spending), top merchants, venituri vs
+      cheltuieli, sold in timp pe banca si cheltuieli weekend vs weekday.
+      Definit direct in UI-ul Metabase (app DB proprie, H2), nu versionat
+      in git — acest exposure exista ca sa apara in lineage-ul dbt cine
+      consuma efectiv fiecare mart.
+    depends_on:
+      - ref('fact_financial_transactions')
+      - ref('mart_monthly_spending')
+      - ref('dim_date')
+      - ref('dim_merchant')
+      - ref('dim_expense_category')
+    owner:
+      name: Radu Manole
+      email: raduquaresma@gmail.com
+
+  - name: email_budget_alerts
+    label: "Alerte financiare (email)"
+    type: application
+    maturity: medium
+    description: >
+      ingestion/alerts/AlertChecker citeste direct (SQL brut, nu prin dbt)
+      mart_budget_alerts pentru depasiri de buget si stg_bank__transactions
+      pentru sold scazut / tranzactii neobisnuit de mari, apoi trimite
+      un email best-effort prin EmailSender. Rulat ca task Airflow dupa
+      dbt test in bank_pipeline. O redenumire de coloana in oricare din
+      cele doua modele ar rupe checker-ul silentios fara acest exposure —
+      vezi si contractul enforced pe mart_budget_alerts.
+    depends_on:
+      - ref('mart_budget_alerts')
+      - ref('stg_bank__transactions')
+    owner:
+      name: Radu Manole
+      email: raduquaresma@gmail.com
