@@ -99,6 +99,13 @@ python -m ingestion --bank bt data/sample/bt_statement.csv
 python -m ingestion --bank bcr data/sample/bcr_statement.csv
 python -m ingestion --bank ing data/sample/ing_statement.csv
 
+# BT24 nu oferă mereu export CSV/Excel, doar PDF — convertorul reconstruiește
+# soldul per-tranzacție (validat contra soldului zilnic raportat de bancă) și
+# scrie un CSV în formatul exact așteptat de BTParser, apoi ingest-ul normal
+pip install -e ".[pdf]"
+python -m scripts.convert_bt_pdf_statement data/private/extras_bt.pdf data/private/extras_bt.csv
+python -m ingestion --bank bt data/private/extras_bt.csv
+
 # instalează dbt (grup separat de dependențe, ține pinurile departe de restul proiectului)
 pip install -e ".[dbt]"
 
@@ -179,7 +186,7 @@ make bi-down
 ```
 .github/workflows/      # CI (GitHub Actions): ruff/mypy + pytest/dbt build pe Postgres de test
 infra/postgres/init/    # schema SQL rulat automat la primul start al containerului
-scripts/                # utilitare, ex: generatorul de date bancare fake
+scripts/                # utilitare: generatorul de date bancare fake, convertorul extras BT PDF->CSV
 ingestion/              # module Python de ingestie (bank: Faza 1, github: Faza 5)
 dbt_project/            # staging + marts + seeds + snapshots (bank: Faza 2, github: Faza 5)
 dags/                   # DAG-uri Airflow (bank_pipeline: Faza 3, github_pipeline: Faza 5, common.py partajat)
@@ -191,6 +198,8 @@ docs/screenshots/       # capturi pentru README (lineage dbt, dashboard Metabase
 ## Date
 
 Repo-ul public conține **doar date sintetice**. Datele financiare reale stau local, în `data/private/` (gitignored) — niciodată în git.
+
+Extrasul real BT vine ca PDF, nu CSV — `scripts/convert_bt_pdf_statement.py` îl convertește local (vezi Quickstart), fișierele rezultate rămân tot în `data/private/`.
 
 ## Design Decisions
 
