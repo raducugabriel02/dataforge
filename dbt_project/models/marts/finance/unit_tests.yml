@@ -152,3 +152,56 @@ unit_tests:
           amount: -20.00
           balance_after: 500.00
           currency: "RON"
+
+  - name: test_account_balances_forward_fill_gap_month
+    description: >
+      O luna fara nicio tranzactie pentru o banca nu trebuie sa dispara din
+      net worth — trebuie sa mosteneasca soldul ultimei luni cu miscare
+      (gaps-and-islands forward-fill), marcata explicit is_forward_filled.
+      Aici: iulie (sold real 1000) si septembrie (sold real 1200), fara
+      nicio tranzactie in august — august trebuie sa apara cu 1000 si
+      is_forward_filled = true.
+    model: mart_account_balances
+    given:
+      - input: ref('stg_bank__transactions')
+        rows:
+          - transaction_id: "txn_jul"
+            source_bank: "bt"
+            txn_date: "2026-07-10"
+            description: "SALARIU"
+            amount: 1000.00
+            balance_after: 1000.00
+            _source_row_number: 1
+            _source_file: "extras.csv"
+            _loaded_at: "2026-07-10 08:00:00"
+          - transaction_id: "txn_sep"
+            source_bank: "bt"
+            txn_date: "2026-09-05"
+            description: "SALARIU"
+            amount: 200.00
+            balance_after: 1200.00
+            _source_row_number: 1
+            _source_file: "extras.csv"
+            _loaded_at: "2026-09-05 08:00:00"
+      - input: ref('dim_date')
+        rows:
+          - date_day: "2026-07-10"
+            date_key: "dk_20260710"
+          - date_day: "2026-08-01"
+            date_key: "dk_20260801"
+          - date_day: "2026-09-05"
+            date_key: "dk_20260905"
+    expect:
+      rows:
+        - source_bank: "bt"
+          month_start: "2026-07-01"
+          balance_eom_filled: 1000.00
+          is_forward_filled: false
+        - source_bank: "bt"
+          month_start: "2026-08-01"
+          balance_eom_filled: 1000.00
+          is_forward_filled: true
+        - source_bank: "bt"
+          month_start: "2026-09-01"
+          balance_eom_filled: 1200.00
+          is_forward_filled: false

@@ -138,6 +138,67 @@ models:
       - name: delta_vs_previous_month
         data_type: numeric(14,2)
 
+  - name: mart_account_balances
+    # Periodic snapshot fact (grain: banca x luna) — sold de sfarsit de
+    # luna, forward-fill in lunile fara tranzactii. Contract enforced la
+    # fel ca celelalte marts finance, ca sa protejam mart_financial_health
+    # (care il consuma direct) de o redenumire silentioasa.
+    config:
+      contract:
+        enforced: true
+    columns:
+      - name: source_bank
+        data_type: text
+        tests: [not_null]
+      - name: month_start
+        data_type: date
+        tests: [not_null]
+      - name: balance_eom_filled
+        data_type: numeric(14,2)
+        tests: [not_null]
+      - name: is_forward_filled
+        data_type: boolean
+        tests: [not_null]
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [source_bank, month_start]
+
+  - name: mart_financial_health
+    # Contract: consumat (sau va fi) direct de Metabase, la fel ca
+    # mart_monthly_spending — vezi comentariul de acolo.
+    config:
+      contract:
+        enforced: true
+    tests:
+      - dbt_expectations.expect_table_row_count_to_be_between:
+          arguments:
+            min_value: 1
+    columns:
+      - name: month_start
+        data_type: date
+        tests: [unique, not_null]
+      - name: total_spending
+        data_type: numeric(14,2)
+        tests: [not_null]
+      - name: total_income
+        data_type: numeric(14,2)
+        tests: [not_null]
+      - name: net_cashflow
+        data_type: numeric(14,2)
+      - name: rolling_3_month_avg
+        data_type: numeric(14,2)
+      - name: delta_vs_previous_month
+        data_type: numeric(14,2)
+      - name: net_worth_eom
+        data_type: numeric(14,2)
+      - name: net_worth_trend_3m
+        data_type: numeric(14,2)
+      - name: savings_rate
+        data_type: numeric(10,4)
+      - name: forecast_next_month_spending
+        data_type: numeric(14,2)
+
   - name: mart_budget_alerts
     # Contract: singurul mart citit prin SQL brut din Python
     # (ingestion/alerts/checker.py), nu doar din alte modele dbt — un
