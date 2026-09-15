@@ -23,6 +23,25 @@ exposures:
       name: Radu Manole
       email: raduquaresma@gmail.com
 
+  - name: metabase_sanatate_financiara
+    label: "Sănătate Financiară (Metabase)"
+    type: dashboard
+    maturity: medium
+    url: http://localhost:3000
+    description: >
+      Dashboard Metabase cu 3 tile-uri: net worth in timp (+ trend pe 3
+      luni), savings rate lunar si cheltuieli reale vs. rolling average vs.
+      forecast (regresie liniara). Definit direct in UI-ul Metabase (app DB
+      proprie, H2), nu versionat in git — la fel ca exposure-ul de mai sus,
+      exista aici doar ca sa apara in lineage-ul dbt cine consuma efectiv
+      mart_financial_health si mart_account_balances.
+    depends_on:
+      - ref('mart_financial_health')
+      - ref('mart_account_balances')
+    owner:
+      name: Radu Manole
+      email: raduquaresma@gmail.com
+
   - name: email_budget_alerts
     label: "Alerte financiare (email)"
     type: application
