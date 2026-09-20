@@ -1,6 +1,7 @@
 # DataForge
 
 [![CI](https://github.com/raducugabriel02/dataforge/actions/workflows/ci.yml/badge.svg)](https://github.com/raducugabriel02/dataforge/actions/workflows/ci.yml)
+[![dbt docs](https://github.com/raducugabriel02/dataforge/actions/workflows/docs.yml/badge.svg)](https://raducugabriel02.github.io/dataforge/)
 
 Personal Data Platform & ELT Warehouse — ingest, transformare (medallion: Raw → Staging → Marts) și BI pentru date personale reale, orchestrat automat și rulabil integral local prin Docker Compose.
 
@@ -21,6 +22,8 @@ Detalii complete despre scop, arhitectură, stack și plan pe faze: vezi [CLAUDE
 **`fact_financial_transactions` e acum incremental** (`unique_key: transaction_id`), închizând un decalaj real față de regula de arhitectură #2 din CLAUDE.md — restul marts-urilor rămân `table`, deliberat, nu din inerție. Vezi [Design Decisions](#design-decisions).
 
 **dbt Semantic Layer (MetricFlow)** adăugat — o singură definiție pentru `total_spending`/`total_income`/`savings_rate` (peste `fact_financial_transactions`, aceeași formulă ca `mart_financial_health`), interogabilă generativ pe orice combinație de dimensiuni (categorie, merchant, bancă, lună, weekend/weekday) fără SQL nou per combinație. Rulează 100% local (`dbt-metricflow`, fără dbt Cloud). Verificat live: `savings_rate` din query coincide exact cu valoarea deja materializată în `mart_financial_health`. Vezi [Design Decisions](#design-decisions).
+
+**`dbt docs` publicat live pe GitHub Pages**: [raducugabriel02.github.io/dataforge](https://raducugabriel02.github.io/dataforge/) — lineage-ul complet (surse, exposures, metrici, semantic models), regenerat automat la fiecare push pe `master` (`.github/workflows/docs.yml`), peste relații reale construite în CI, nu doar graful static. Repo-ul e public (verificat anterior: zero date reale în istoric, doar date sintetice). Vezi [Design Decisions](#design-decisions).
 
 **Indexare Postgres pe `fact_financial_transactions`** (`transaction_id` unic, `date_key`/`merchant_key`/`category_key`/`txn_date`) — verificat cu `EXPLAIN ANALYZE`, nu doar adăugat: la volumul curent (32 rânduri) Postgres alege corect Seq Scan (indexul n-ar ajuta la o tabelă de-o pagină), dar la volum simulat (~5.400 rânduri sintetice, șterse după test) planner-ul trece la Bitmap Index Scan pe `category_key` — dovadă live, nu presupunere. Deliberat fără index pe `source_bank` (doar 3 valori, cardinalitate prea mică). Vezi [Design Decisions](#design-decisions).
 
