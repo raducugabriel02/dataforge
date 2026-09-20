@@ -27,6 +27,13 @@ pdf = [
     # numai in PDF, nu si CSV/Excel. Nu e folosit de pipeline-ul de productie.
     "pdfplumber>=0.11",
 ]
+semantic-layer = [
+    # dbt Semantic Layer / MetricFlow, rulat local (nu dbt Cloud) — interogare
+    # generativa a metricilor peste marts, fara SQL nou per combinatie de
+    # dimensiuni. Grup separat de `dbt` fiindca nu e necesar pipeline-ului
+    # de productie (ingest/dbt build/Airflow), doar pentru explorare/interviu.
+    "dbt-metricflow[postgres]>=0.15",
+]
 
 [tool.setuptools.packages.find]
 include = ["ingestion*", "scripts*"]

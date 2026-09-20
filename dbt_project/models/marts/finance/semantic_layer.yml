@@ -1,0 +1,119 @@
+version: 2
+
+# dbt Semantic Layer (MetricFlow, rulat local via `mf`, fara dbt Cloud).
+# O singura definitie pentru fiecare metrica financiara (total_spending,
+# total_income, savings_rate — aceeasi formula ca mart_financial_health),
+# interogabila apoi pe orice combinatie de dimensiuni existente (categorie,
+# merchant, banca, luna, weekend/weekday) fara SQL nou per combinatie.
+semantic_models:
+  - name: fact_financial_transactions
+    description: Semantic model peste fact-ul de tranzactii — sursa metricilor financiare.
+    model: ref('fact_financial_transactions')
+    defaults:
+      agg_time_dimension: txn_date
+    entities:
+      - name: transaction
+        type: primary
+        expr: transaction_id
+      - name: date
+        type: foreign
+        expr: date_key
+      - name: merchant
+        type: foreign
+        expr: merchant_key
+      - name: category
+        type: foreign
+        expr: category_key
+    dimensions:
+      - name: txn_date
+        type: time
+        type_params:
+          time_granularity: day
+      - name: source_bank
+        type: categorical
+      - name: currency
+        type: categorical
+    measures:
+      - name: transaction_count
+        agg: count
+        expr: "1"
+        create_metric: true
+      - name: total_spending
+        description: >
+          Suma cheltuielilor (tranzactii cu suma negativa), in valoare
+          pozitiva — aceeasi conventie ca total_spending din
+          mart_monthly_spending.
+        agg: sum
+        expr: "case when amount < 0 then -amount else 0 end"
+        create_metric: true
+      - name: total_income
+        description: Suma incasarilor (tranzactii cu suma pozitiva).
+        agg: sum
+        expr: "case when amount > 0 then amount else 0 end"
+        create_metric: true
+      - name: net_cashflow
+        description: Suma neta a tuturor tranzactiilor (incasari minus cheltuieli).
+        agg: sum
+        expr: amount
+        create_metric: true
+
+  - name: dim_date
+    description: Dimensiuni de calendar reutilizate din dim_date, disponibile prin entitatea "date".
+    model: ref('dim_date')
+    entities:
+      - name: date
+        type: primary
+        expr: date_key
+    dimensions:
+      - name: date_day
+        type: time
+        type_params:
+          time_granularity: day
+      - name: is_weekend
+        type: categorical
+      - name: is_legal_holiday_ro
+        type: categorical
+
+  - name: dim_merchant
+    description: Dimensiuni de comerciant, disponibile prin entitatea "merchant".
+    model: ref('dim_merchant')
+    entities:
+      - name: merchant
+        type: primary
+        expr: merchant_key
+    dimensions:
+      - name: merchant_name
+        type: categorical
+      - name: default_category_name
+        type: categorical
+
+  - name: dim_expense_category
+    description: Dimensiuni de categorie (SCD2, deja punct-in-timp prin category_key), disponibile prin entitatea "category".
+    model: ref('dim_expense_category')
+    entities:
+      - name: category
+        type: primary
+        expr: category_key
+    dimensions:
+      - name: category_name
+        type: categorical
+      - name: category_group
+        type: categorical
+
+metrics:
+  # Restul metricilor simple (transaction_count, total_spending, total_income,
+  # net_cashflow) sunt generate automat din measures via `create_metric: true`
+  # de mai sus — nu trebuie redeclarate aici.
+  - name: savings_rate
+    description: >
+      (total_income - total_spending) / total_income — aceeasi formula ca
+      mart_financial_health.savings_rate. Definita o singura data aici,
+      verificata live sa coincida cu valoarea deja materializata in mart
+      pentru aceeasi luna.
+    type: derived
+    label: Rata de economisire
+    type_params:
+      expr: (total_income - total_spending) / nullif(total_income, 0)
+      metrics:
+        - name: total_income
+        - name: total_spending

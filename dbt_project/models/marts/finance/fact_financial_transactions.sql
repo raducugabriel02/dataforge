@@ -5,6 +5,11 @@
 -- deja materializat NU se recalculeaza singur — trebuie `dbt run --full-refresh
 -- --select fact_financial_transactions` explicit. E comportamentul corect, nu
 -- un bug: istoricul ramane fixat la ce era valid la momentul tranzactiei.
+--
+-- txn_date e pastrat ca si coloana literala (nu doar date_key, FK-ul surogat
+-- spre dim_date) special pentru Semantic Layer: MetricFlow cere un
+-- agg_time_dimension real (tip time) direct pe modelul semantic care are
+-- metricile, nu poate deriva timpul doar dintr-un FK catre alt model.
 with transactions as (
     select * from {{ ref('stg_bank__transactions') }}
 ),
@@ -52,6 +57,7 @@ dim_expense_category as (
 
 select
     categorized.transaction_id,
+    categorized.txn_date,
     dim_date.date_key,
     dim_merchant.merchant_key,
     -- point-in-time SCD2 join: the category dimension row that was ACTIVE on

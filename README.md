@@ -20,6 +20,8 @@ Detalii complete despre scop, arhitectură, stack și plan pe faze: vezi [CLAUDE
 
 **`fact_financial_transactions` e acum incremental** (`unique_key: transaction_id`), închizând un decalaj real față de regula de arhitectură #2 din CLAUDE.md — restul marts-urilor rămân `table`, deliberat, nu din inerție. Vezi [Design Decisions](#design-decisions).
 
+**dbt Semantic Layer (MetricFlow)** adăugat — o singură definiție pentru `total_spending`/`total_income`/`savings_rate` (peste `fact_financial_transactions`, aceeași formulă ca `mart_financial_health`), interogabilă generativ pe orice combinație de dimensiuni (categorie, merchant, bancă, lună, weekend/weekday) fără SQL nou per combinație. Rulează 100% local (`dbt-metricflow`, fără dbt Cloud). Verificat live: `savings_rate` din query coincide exact cu valoarea deja materializată în `mart_financial_health`. Vezi [Design Decisions](#design-decisions).
+
 ## Arhitectură
 
 ```mermaid
@@ -125,9 +127,22 @@ dbt docs serve --project-dir dbt_project --profiles-dir dbt_project
 # pe Contents/Metadata/Pull requests) și GITHUB_USERNAME în .env, apoi:
 python -m ingestion.github
 dbt build --project-dir dbt_project --profiles-dir dbt_project --select tag:github tag:combined
+
+# Semantic Layer (MetricFlow, local, fara dbt Cloud) — interogare generativa a
+# metricilor financiare (total_spending, total_income, savings_rate) pe orice
+# combinatie de dimensiuni (categorie, merchant, banca, luna, weekend/weekday),
+# fara SQL nou. Necesita dbt build rulat macar o data (genereaza target/semantic_manifest.json).
+pip install -e ".[semantic-layer]"
+cd dbt_project
+mf validate-configs
+mf query --metrics total_spending,total_income,savings_rate --group-by metric_time__month,transaction__currency
+mf query --metrics total_spending --group-by category__category_group
+cd ..
 ```
 
 > Pe Windows cu Python 3.14, executabilele `dbt.exe`/`pip.exe` pot crăpa silențios (issue de mediu, nu de proiect) — folosește `python -m pip ...` și, pentru dbt, `python -c "from dbt.cli.main import cli; cli()" <comandă>` în loc de `dbt <comandă>` direct.
+
+> Tot pe Windows: `mf` (dbt-metricflow) poate eșua cu `cannot use a string pattern on a bytes-like object` — spinner-ul `halo` scrie caractere Unicode pe o consolă `cp1252`. Rulează cu `PYTHONIOENCODING=utf-8` înainte de `mf` (ex. `PYTHONIOENCODING=utf-8 mf validate-configs`).
 
 > Comenzile `make` din `Makefile` (`make up`, `make test`, etc.) fac exact pașii de mai sus. Necesită GNU Make instalat — nu vine implicit pe Windows.
 
@@ -227,3 +242,6 @@ Versiune scurtă a deciziilor de arhitectură; explicațiile complete, construit
 - **Forecast de cheltuieli via `regr_slope`/`regr_intercept`, nu Python/ML** — sunt funcții agregat standard Postgres, utilizabile ca window functions cu `OVER`, care calculează o regresie liniară simplă (metoda celor mai mici pătrate) direct în SQL. Cu sub 2 luni distincte de date, Postgres le întoarce `NULL` automat — limitarea forecast-ului cu istoric insuficient e vizibilă direct în date, nu ascunsă sau aproximată.
 - **`fact_financial_transactions` e incremental (`unique_key: transaction_id`), restul marts-urilor rămân `table`, deliberat** — fact-ul de tranzacții e append-only prin construcție (raw dedup pe `_row_hash`), candidatul Kimball corect pentru incremental. `fact_daily_productivity` rămâne `table` fiindcă `raw.github_pull_requests` e upsert (un PR poate trece "open"→"merged" la re-ingest, schimbând retroactiv o zi din trecut) — un filtru incremental naiv ar rata acea actualizare. Marts-urile de agregare rămân `table` fiindcă recalculează window functions (rolling average, `regr_slope`) peste tot istoricul — la volumul actual (câteva sute de rânduri chiar la ani de date), full refresh e mai simplu și la fel de corect. Detalii: [Incremental models: nu peste tot, doar unde e corect](docs/interview-notes.md#incremental-models-nu-peste-tot-doar-unde-e-corect-hardening-2026-09-20).
 - **Trade-off acceptat pe incremental:** dacă `dim_expense_category` se corectează retroactiv, factul deja materializat nu se recalculează singur — necesită `dbt run --full-refresh --select fact_financial_transactions` explicit. E comportamentul corect (istoricul rămâne fixat la categoria validă *atunci*), dar conștient, nu implicit.
+- **Semantic Layer peste marts-urile existente, nu în locul lor** — `fact_financial_transactions`/`dim_date`/`dim_merchant`/`dim_expense_category` rămân sursa de adevăr; MetricFlow adaugă un strat de interogare deasupra (metrici + dimensiuni declarate o dată, combinabile generativ), nu duplică logica. `txn_date` a fost adăugat ca și coloană literală pe fact (pe lângă `date_key`) special pentru asta — MetricFlow cere un `agg_time_dimension` real pe modelul cu metricile, nu poate deriva timpul doar dintr-un FK. `dim_date` (deja un date-spine complet) e reutilizat direct ca time spine cerut de Semantic Layer, în loc să fie duplicat un model nou.
+- **`savings_rate` ca metrică `derived`, nu `ratio`** — formula reală e `(total_income - total_spending) / total_income`, nu un raport simplu între două metrici; tipul `derived` din MetricFlow permite o expresie SQL peste metrici deja definite (`total_income`, `total_spending`), aceeași formulă exactă ca în `mart_financial_health.savings_rate` — verificat live că cele două coincid (0.171629 din query vs. 0.1716 din mart, aceeași valoare la rotunjirea la 4 zecimale).
+- **`currency` expus ca dimensiune în semantic layer, nu doar coloană pe fact** — un query cu sume fără unitatea de măsură e ambiguu; `transaction__currency` apare acum direct în output-ul `mf query` (`RON`, singura valută curentă). Ieftin acum, dar pregătește terenul pentru Revolut (sursă multi-valută, deferred separat) — atunci `total_spending` grupat greșit peste valute diferite ar fi o eroare reală, nu doar cosmetică.

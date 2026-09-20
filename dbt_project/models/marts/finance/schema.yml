@@ -2,11 +2,17 @@ version: 2
 
 models:
   - name: dim_date
+    # time_spine: dim_date e deja un date-spine complet (dbt_utils.date_spine,
+    # 2024-2028) — il refolosim ca time spine cerut de Semantic Layer in loc
+    # sa duplicam un model nou doar pentru asta.
+    time_spine:
+      standard_granularity_column: date_day
     columns:
       - name: date_key
         tests: [unique, not_null]
       - name: date_day
         tests: [unique, not_null]
+        granularity: day
 
   - name: dim_merchant
     columns:
@@ -75,6 +81,13 @@ models:
       - name: transaction_id
         data_type: text
         tests: [unique, not_null]
+      - name: txn_date
+        # Coloana literala (nu doar date_key, FK-ul surogat) — necesara ca
+        # agg_time_dimension pentru Semantic Layer (semantic_layer.yml):
+        # MetricFlow are nevoie de un timp real pe modelul cu metricile,
+        # nu poate deriva "metric_time" doar dintr-un FK catre alt model.
+        data_type: date
+        tests: [not_null]
       - name: date_key
         data_type: text
         tests:
