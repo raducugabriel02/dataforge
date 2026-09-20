@@ -1,0 +1,90 @@
+name: dbt docs
+
+on:
+  push:
+    branches: [master]
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Un singur deploy de Pages activ o data — un push nou anuleaza deploy-ul
+# in curs al unuia mai vechi, nu il lasa sa suprascrie rezultatul mai nou.
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      POSTGRES_HOST: localhost
+      POSTGRES_PORT: "5432"
+      POSTGRES_USER: dataforge
+      POSTGRES_PASSWORD: dataforge_ci_password
+      POSTGRES_DB: dataforge
+    services:
+      # Postgres efemer, la fel ca in ci.yml — dbt docs generate are nevoie
+      # de relatii REALE (nu doar de manifest-ul static) ca sa produca un
+      # catalog.json cu coloane/tipuri, nu doar graful de lineage gol.
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: dataforge
+          POSTGRES_PASSWORD: dataforge_ci_password
+          POSTGRES_DB: dataforge
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U dataforge -d dataforge"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: "pip"
+
+      - name: Instaleaza dependintele (dbt)
+        run: pip install -e ".[dbt]"
+
+      - name: Creeaza schemele si tabelele raw
+        run: |
+          for f in infra/postgres/init/*.sql; do
+            PGPASSWORD="$POSTGRES_PASSWORD" psql -h localhost -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -f "$f"
+          done
+
+      - name: Genereaza si ingest date bancare sintetice
+        run: |
+          python -m scripts.generate_fake_bank_data --bank all --months 6
+          python -m ingestion --bank bt data/sample/bt_statement.csv
+          python -m ingestion --bank bcr data/sample/bcr_statement.csv
+          python -m ingestion --bank ing data/sample/ing_statement.csv
+
+      - name: dbt deps
+        run: dbt deps --project-dir dbt_project --profiles-dir dbt_project
+
+      - name: dbt build
+        run: dbt build --project-dir dbt_project --profiles-dir dbt_project
+
+      - name: dbt docs generate
+        run: dbt docs generate --project-dir dbt_project --profiles-dir dbt_project
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dbt_project/target
+
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
