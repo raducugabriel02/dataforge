@@ -71,6 +71,20 @@ models:
       materialized: incremental
       unique_key: transaction_id
       on_schema_change: fail
+      # indexes (dbt-postgres): transaction_id il foloseste direct anti-join-ul
+      # incremental (`not in (select transaction_id from {{ this }})`, vezi
+      # fact_financial_transactions.sql) la fiecare rulare normala; date_key/
+      # merchant_key/category_key sunt FK-uri spre dimensiuni (join-uri Kimball
+      # standard). Deliberat NU indexam source_bank — 3 valori distincte,
+      # cardinalitate prea mica ca sa merite (planner-ul alege corect seq scan
+      # oricum, chiar la volum mare, pentru o coloana cu selectivitate slaba).
+      indexes:
+        - columns: [transaction_id]
+          unique: true
+        - columns: [date_key]
+        - columns: [merchant_key]
+        - columns: [category_key]
+        - columns: [txn_date]
       contract:
         enforced: true
     tests:
