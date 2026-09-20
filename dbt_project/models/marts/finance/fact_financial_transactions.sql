@@ -1,3 +1,10 @@
+-- Incremental (unique_key: transaction_id, config in schema.yml): fiecare
+-- rulare normala proceseaza doar tranzactiile noi, nu reconstruieste toata
+-- tabela. Efect secundar de retinut: daca dim_expense_category se schimba
+-- retroactiv (ex: capcana SCD2 valid_from din interview-notes.md), factul
+-- deja materializat NU se recalculeaza singur — trebuie `dbt run --full-refresh
+-- --select fact_financial_transactions` explicit. E comportamentul corect, nu
+-- un bug: istoricul ramane fixat la ce era valid la momentul tranzactiei.
 with transactions as (
     select * from {{ ref('stg_bank__transactions') }}
 ),
@@ -64,3 +71,6 @@ left join dim_expense_category
     on categorized.category_name = dim_expense_category.category_name
     and categorized.txn_date >= dim_expense_category.valid_from
     and categorized.txn_date < dim_expense_category.valid_to
+{% if is_incremental() %}
+where categorized.transaction_id not in (select transaction_id from {{ this }})
+{% endif %}

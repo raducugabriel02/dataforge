@@ -42,6 +42,9 @@ unit_tests:
       randuri pentru aceeasi tranzactie (fan-out pe left join), ci exact
       unul, cu categoria regulii de prioritate mai mare.
     model: fact_financial_transactions
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('stg_bank__transactions')
         rows:
@@ -100,6 +103,9 @@ unit_tests:
       categoriei care era ACTIVA la data tranzactiei, nu versiunea curenta
       — chiar daca versiunea curenta exista deja in dim_expense_category.
     model: fact_financial_transactions
+    overrides:
+      macros:
+        is_incremental: false
     given:
       - input: ref('stg_bank__transactions')
         rows:

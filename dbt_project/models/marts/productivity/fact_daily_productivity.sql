@@ -3,6 +3,15 @@
 -- dense day-by-day spine. No single natural id exists for an aggregate row
 -- like this, so the grain itself (repo_key, date_key) is the tested key
 -- (see schema.yml's unique_combination_of_columns) instead of inventing one.
+--
+-- Deliberately NOT incremental (unlike fact_financial_transactions), full
+-- table rebuild every run: raw.github_pull_requests is upsert, a mutable
+-- entity (a PR moves open -> merged on re-ingest). A PR merged today changes
+-- pr_merged_count for the day it was CREATED, which can be far in the past —
+-- a naive "only new raw rows" incremental filter would silently miss that
+-- day's row needing an update. Table materialization always recomputes the
+-- full aggregate, so it can't go stale this way; at this data volume (tens
+-- of commits/PRs) the cost of a full rebuild is negligible.
 with commits as (
     select * from {{ ref('stg_github__commits') }}
 ),
