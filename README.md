@@ -13,7 +13,7 @@ Detalii complete despre scop, arhitectură, stack și plan pe faze: vezi [CLAUDE
 
 **CI (GitHub Actions)** adăugat — `ruff`/`mypy` la fiecare push/PR, plus `pytest`/`dbt build` complet rulate împotriva unui Postgres de test izolat (nu Postgres-ul de dezvoltare din `docker-compose.yml`). Vezi [Design Decisions](#design-decisions).
 
-**Faza 6 (v3, Strava)** — ingestie + dbt completă și verificată live cu primul export real (3 activități, ceas Huawei sincronizat cu Strava). Exportul real a confirmat doi bug-uri latente nedescoperibile fără date reale: coloana generică `Distance` e în **kilometri**, nu metri cum presupusesem inițial, și `Moving Time` e formatat ca float (`"66.0"`) spre deosebire de `Elapsed Time` din același rând (`"66"`). `raw.strava_activities` (upsert, entitate mutabilă), `fact_activities` (grain atomic, ca `fact_financial_transactions`) și `fact_daily_fitness` (agregat pe zi) intră în `mart_daily_finance_productivity_fitness`, redenumit din varianta doar finanțe×productivitate. Vezi [Design Decisions](#design-decisions).
+**Faza 6 (v3, Strava)** — completă: ingestie + dbt + orchestrare Airflow, verificate live cu primul export real (3 activități, ceas Huawei sincronizat cu Strava). Exportul real a confirmat doi bug-uri latente nedescoperibile fără date reale: coloana generică `Distance` e în **kilometri**, nu metri cum presupusesem inițial, și `Moving Time` e formatat ca float (`"66.0"`) spre deosebire de `Elapsed Time` din același rând (`"66"`). `raw.strava_activities` (upsert, entitate mutabilă), `fact_activities` (grain atomic, ca `fact_financial_transactions`) și `fact_daily_fitness` (agregat pe zi) intră în `mart_daily_finance_productivity_fitness`, redenumit din varianta doar finanțe×productivitate. `strava_pipeline` (al treilea DAG) verificat live cu ciclul complet roșu→verde (test dbt stricat intenționat → alertă → reparat). Vezi [Design Decisions](#design-decisions).
 
 **Hardening dbt** adăugat: teste unitare pe logica de tie-break merchant și pe join-ul point-in-time SCD2 (regresii directe pentru bug-urile găsite pe date reale), **model contracts** (`contract: enforced`) pe cele 4 marts financiare, și **exposures** care leagă dashboard-ul Metabase și modulul de alerte email în lineage-ul `dbt docs`. Teste unitare complete și pentru `ingestion/github/`/`ingestion/alerts/` (înainte doar verificate live). Vezi [Design Decisions](#design-decisions).
 
@@ -61,6 +61,7 @@ flowchart LR
     subgraph orch["Airflow — profil 'airflow'"]
         dag["bank_pipeline DAG<br/>TaskFlow API"]
         ghdag["github_pipeline DAG<br/>TaskFlow API, dynamic mapping"]
+        stravadag["strava_pipeline DAG<br/>TaskFlow API"]
         alertcheck["check_alerts<br/>AlertChecker + EmailSender"]
         afdb[("Postgres<br/>metadata Airflow")]
     end
@@ -88,8 +89,11 @@ flowchart LR
     alertcheck -. "email (SMTP)" .-> email[/"Inbox"/]
     ghdag -. orchestrează .-> ghclient
     ghdag -. "dbt run/test tag:github,combined" .-> staging
+    stravadag -. orchestrează .-> stravaparser
+    stravadag -. "dbt run/test tag:strava,combined" .-> staging
     dag --- afdb
     ghdag --- afdb
+    stravadag --- afdb
     dash --- mbdb
 ```
 
@@ -165,7 +169,7 @@ cd ..
 
 > Comenzile `make` din `Makefile` (`make up`, `make test`, etc.) fac exact pașii de mai sus. Necesită GNU Make instalat — nu vine implicit pe Windows.
 
-### Airflow (Faza 3 + 5)
+### Airflow (Faza 3 + 5 + 6)
 
 Rulează într-un **profil Docker separat** (`airflow`), nepornit de `make up` — Airflow consumă ~4GB RAM, deci rămâne opțional cât lucrezi pe dbt/ingestie:
 
@@ -176,12 +180,13 @@ make airflow-up
 make airflow-logs
 ```
 
-UI la http://localhost:8080 (user/parolă din `AIRFLOW_ADMIN_USER`/`AIRFLOW_ADMIN_PASSWORD`, implicit `admin`/`admin`). Două DAG-uri, zilnice, fiecare cu propria alertă Discord la eșec (`dags/common.py`, folosit de amândouă):
+UI la http://localhost:8080 (user/parolă din `AIRFLOW_ADMIN_USER`/`AIRFLOW_ADMIN_PASSWORD`, implicit `admin`/`admin`). Trei DAG-uri, zilnice, fiecare cu propria alertă Discord la eșec (`dags/common.py`, folosit de toate):
 
 - **`bank_pipeline`** — verifică `data/private/` (fallback `data/sample/`) pentru CSV-uri noi, le ingerează idempotent, apoi `dbt seed → snapshot → run → test` (tag `bank`), apoi `check_alerts` — rulează `AlertChecker` (buget depășit pe categorie, sold sub prag, tranzacție neobișnuit de mare) și trimite un email consolidat dacă ceva s-a declanșat.
-- **`github_pipeline`** (Faza 5) — ingerează repos, apoi (dynamic task mapping, un task per repo) commit-uri + PR-uri, apoi `dbt run/test` pe `tag:github` + `tag:combined` (reconstruiește și mart-ul combinat finanțe×productivitate). Cere `GITHUB_TOKEN`/`GITHUB_USERNAME` completate în `.env` — altfel task-ul de ingest eșuează cu un mesaj clar, nu silențios.
+- **`github_pipeline`** (Faza 5) — ingerează repos, apoi (dynamic task mapping, un task per repo) commit-uri + PR-uri, apoi `dbt run/test` pe `tag:github` + `tag:combined` (reconstruiește și mart-ul combinat finanțe×productivitate×fitness). Cere `GITHUB_TOKEN`/`GITHUB_USERNAME` completate în `.env` — altfel task-ul de ingest eșuează cu un mesaj clar, nu silențios.
+- **`strava_pipeline`** (Faza 6) — spre deosebire de `github_pipeline` (poll live API), sursa e un export manual: caută `data/private/strava_export_raw/activities.csv`, îl ingerează idempotent (upsert pe `activity_id`), apoi `dbt run/test` pe `tag:strava` + `tag:combined`. Fără fișier nou, task-ul `ingest` reușește oricum (returnează explicit "niciun export Strava de ingerat"), dbt rulează pe datele deja existente.
 
-Un test dbt picat oprește pipeline-ul respectiv. `check_alerts` e diferit: e best-effort — completează `SMTP_USER`/`SMTP_PASSWORD`/`ALERT_EMAIL_TO` în `.env` (Gmail cere un [App Password](https://myaccount.google.com/apppasswords), nu parola de cont) ca să chiar primești email; necompletat, task-ul tot rulează și reușește, doar sare peste trimitere (vezi [Design Decisions](#design-decisions)).
+Un test dbt picat oprește pipeline-ul respectiv — verificat live și pentru `strava_pipeline` (test `distance_meters` stricat intenționat → `dbt_test` roșu, `check_source`/`ingest`/`dbt_run` rămân verzi, alerta Discord încearcă să trimită și loghează clar dacă webhook-ul nu e setat → reparat → verde din nou, exact ciclul verificat prima dată la Faza 3 pe `bank_pipeline`). `check_alerts` e diferit: e best-effort — completează `SMTP_USER`/`SMTP_PASSWORD`/`ALERT_EMAIL_TO` în `.env` (Gmail cere un [App Password](https://myaccount.google.com/apppasswords), nu parola de cont) ca să chiar primești email; necompletat, task-ul tot rulează și reușește, doar sare peste trimitere (vezi [Design Decisions](#design-decisions)).
 
 ```bash
 make airflow-down   # oprește doar serviciile Airflow, Postgres-ul de date rămâne pornit separat
@@ -227,7 +232,7 @@ infra/postgres/init/    # schema SQL rulat automat la primul start al containeru
 scripts/                # utilitare: generatorul de date bancare fake, convertorul extras BT PDF->CSV
 ingestion/              # module Python de ingestie (bank: Faza 1, github: Faza 5, strava: Faza 6)
 dbt_project/            # staging + marts + seeds + snapshots (bank: Faza 2, github: Faza 5, strava: Faza 6)
-dags/                   # DAG-uri Airflow (bank_pipeline: Faza 3, github_pipeline: Faza 5, common.py partajat)
+dags/                   # DAG-uri Airflow (bank_pipeline: Faza 3, github_pipeline: Faza 5, strava_pipeline: Faza 6, common.py partajat)
 tests/                  # unit tests
 docs/interview-notes.md # note de arhitectură construite fază cu fază
 docs/screenshots/       # capturi pentru README (lineage dbt, dashboard Metabase)
