@@ -1,15 +1,20 @@
 -- Grain: one row per calendar day, bounded by the overlap of activity across
--- both sources. Unlike fact_daily_productivity (sparse — only days with an
--- event), this is a dense spine on purpose: a day with zero commits AND zero
--- spending is still a meaningful data point once you're correlating the two
--- (e.g. "do I spend less on days I commit more?"), so zero-activity days
--- must appear as real zeros, not be missing rows.
+-- all three sources. Unlike fact_daily_productivity/fact_daily_fitness
+-- (sparse — only days with an event), this is a dense spine on purpose: a
+-- day with zero commits AND zero spending AND zero workouts is still a
+-- meaningful data point once you're correlating them (e.g. "do I spend less
+-- on days I commit more?", "do I spend less on days I work out?"), so
+-- zero-activity days must appear as real zeros, not be missing rows.
 with financial_transactions as (
     select * from {{ ref('fact_financial_transactions') }}
 ),
 
 daily_productivity as (
     select * from {{ ref('fact_daily_productivity') }}
+),
+
+daily_fitness as (
+    select * from {{ ref('fact_daily_fitness') }}
 ),
 
 dim_date as (
@@ -38,6 +43,17 @@ daily_productivity_agg as (
     group by 1
 ),
 
+daily_fitness_agg as (
+    select
+        dim_date.date_day,
+        sum(daily_fitness.activity_count) as activity_count,
+        sum(daily_fitness.total_distance_meters) as total_distance_meters,
+        sum(daily_fitness.total_calories) as total_calories
+    from daily_fitness
+    join dim_date on daily_fitness.date_key = dim_date.date_key
+    group by 1
+),
+
 active_range as (
     select
         min(date_day) as range_start,
@@ -46,6 +62,8 @@ active_range as (
         select date_day from daily_spending
         union all
         select date_day from daily_productivity_agg
+        union all
+        select date_day from daily_fitness_agg
     ) as all_active_days
 )
 
@@ -56,10 +74,14 @@ select
     coalesce(daily_spending.transaction_count, 0) as transaction_count,
     coalesce(daily_productivity_agg.commit_count, 0) as commit_count,
     coalesce(daily_productivity_agg.pr_opened_count, 0) as pr_opened_count,
-    coalesce(daily_productivity_agg.pr_merged_count, 0) as pr_merged_count
+    coalesce(daily_productivity_agg.pr_merged_count, 0) as pr_merged_count,
+    coalesce(daily_fitness_agg.activity_count, 0) as activity_count,
+    coalesce(daily_fitness_agg.total_distance_meters, 0) as total_distance_meters,
+    coalesce(daily_fitness_agg.total_calories, 0) as total_calories
 from dim_date
 cross join active_range
 left join daily_spending on dim_date.date_day = daily_spending.date_day
 left join daily_productivity_agg on dim_date.date_day = daily_productivity_agg.date_day
+left join daily_fitness_agg on dim_date.date_day = daily_fitness_agg.date_day
 where dim_date.date_day between active_range.range_start and active_range.range_end
 order by dim_date.date_day

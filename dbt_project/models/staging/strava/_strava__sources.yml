@@ -1,0 +1,25 @@
+version: 2
+
+sources:
+  - name: raw
+    schema: raw
+    tables:
+      - name: strava_activities
+        description: >
+          Latest known state of the user's Strava activities, loaded from
+          Strava's bulk account-data export (Faza 6/v3) — not live API polling
+          (Strava's API requires a paid subscription at this project's scale).
+          Mutable entity — upserted on activity_id: a user can rename or
+          re-type an activity between exports.
+        columns:
+          - name: activity_id
+          - name: activity_date
+          - name: name
+          - name: activity_type
+          - name: elapsed_time_seconds
+          - name: distance_meters
+          - name: moving_time_seconds
+          - name: average_heart_rate
+          - name: max_heart_rate
+          - name: calories
+          - name: _loaded_at

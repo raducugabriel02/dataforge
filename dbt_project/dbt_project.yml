@@ -21,12 +21,16 @@ models:
       +tags: ["bank"]
       github:
         +tags: ["github"]
+      strava:
+        +tags: ["strava"]
     marts:
       +materialized: table
       +schema: marts
       +tags: ["bank"]
       productivity:
         +tags: ["github"]
+      fitness:
+        +tags: ["strava"]
       combined:
         +tags: ["combined"]
 

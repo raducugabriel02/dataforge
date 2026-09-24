@@ -13,7 +13,7 @@ Detalii complete despre scop, arhitectură, stack și plan pe faze: vezi [CLAUDE
 
 **CI (GitHub Actions)** adăugat — `ruff`/`mypy` la fiecare push/PR, plus `pytest`/`dbt build` complet rulate împotriva unui Postgres de test izolat (nu Postgres-ul de dezvoltare din `docker-compose.yml`). Vezi [Design Decisions](#design-decisions).
 
-**Faza 6 (v3, Strava)** în lucru — sursa de fitness are acum date personale reale (ceas Huawei sincronizat cu Strava), reprioritizată. Parserul pentru exportul manual Strava (`activities.csv`) e scris și testat; `raw.strava_activities`/staging/marts urmează după următorul export real (Strava limitează exportul la o dată/săptămână).
+**Faza 6 (v3, Strava)** — ingestie + dbt completă și verificată live cu primul export real (3 activități, ceas Huawei sincronizat cu Strava). Exportul real a confirmat doi bug-uri latente nedescoperibile fără date reale: coloana generică `Distance` e în **kilometri**, nu metri cum presupusesem inițial, și `Moving Time` e formatat ca float (`"66.0"`) spre deosebire de `Elapsed Time` din același rând (`"66"`). `raw.strava_activities` (upsert, entitate mutabilă), `fact_activities` (grain atomic, ca `fact_financial_transactions`) și `fact_daily_fitness` (agregat pe zi) intră în `mart_daily_finance_productivity_fitness`, redenumit din varianta doar finanțe×productivitate. Vezi [Design Decisions](#design-decisions).
 
 **Hardening dbt** adăugat: teste unitare pe logica de tie-break merchant și pe join-ul point-in-time SCD2 (regresii directe pentru bug-urile găsite pe date reale), **model contracts** (`contract: enforced`) pe cele 4 marts financiare, și **exposures** care leagă dashboard-ul Metabase și modulul de alerte email în lineage-ul `dbt docs`. Teste unitare complete și pentru `ingestion/github/`/`ingestion/alerts/` (înainte doar verificate live). Vezi [Design Decisions](#design-decisions).
 
@@ -34,6 +34,7 @@ flowchart LR
     subgraph src["Surse"]
         csv["Extrase CSV<br/>BT / BCR / ING"]
         gh["GitHub REST API<br/>repos / commits / PR-uri"]
+        strava["Strava bulk export<br/>activities.csv (manual)"]
     end
 
     subgraph ingest["Ingestie Python (idempotentă)"]
@@ -41,15 +42,19 @@ flowchart LR
         loader["RawLoader<br/>dedup pe _row_hash"]
         ghclient["GitHubClient<br/>paginare + retry pe rate limit"]
         ghloader["GitHubRawLoader<br/>upsert (mutabil) / dedup (imuabil)"]
+        stravaparser["StravaActivityParser<br/>citire pozițională (header duplicat)"]
+        stravaloader["StravaRawLoader<br/>upsert (mutabil)"]
     end
 
     subgraph dwh["Postgres — DWH (medallion)"]
         raw[("raw.bank_transactions")]
         ghraw[("raw.github_*")]
+        stravaraw[("raw.strava_activities")]
         staging[["staging views (dbt)"]]
         snapshot[("staging.expense_categories_snapshot<br/>SCD2")]
         marts[("marts.*<br/>facts + dims Kimball")]
-        combined[("marts.mart_daily_finance_productivity")]
+        fitnessmart[("marts.fact_activities<br/>marts.fact_daily_fitness")]
+        combined[("marts.mart_daily_finance_productivity_fitness")]
         budgetmart[("marts.mart_budget_alerts")]
     end
 
@@ -67,10 +72,13 @@ flowchart LR
 
     csv --> parser --> loader --> raw
     gh --> ghclient --> ghloader --> ghraw
+    strava --> stravaparser --> stravaloader --> stravaraw
     raw --> staging --> marts
     ghraw --> staging
+    stravaraw --> staging --> fitnessmart
     staging --> snapshot --> marts
     marts --> combined
+    fitnessmart --> combined
     marts --> budgetmart
     marts --> dash
     dag -. orchestrează .-> parser
@@ -132,6 +140,12 @@ dbt docs serve --project-dir dbt_project --profiles-dir dbt_project
 # pe Contents/Metadata/Pull requests) și GITHUB_USERNAME în .env, apoi:
 python -m ingestion.github
 dbt build --project-dir dbt_project --profiles-dir dbt_project --select tag:github tag:combined
+
+# sursa Strava (Faza 6, v3) — export manual (Strava limitează la o dată/săptămână):
+# strava.com -> Settings -> My Account -> Download or Delete Your Account ->
+# Download Request. Dezarhivează în data/private/strava_export_raw/, apoi:
+python -m ingestion.strava data/private/strava_export_raw/activities.csv
+dbt build --project-dir dbt_project --profiles-dir dbt_project --select tag:strava tag:combined
 
 # Semantic Layer (MetricFlow, local, fara dbt Cloud) — interogare generativa a
 # metricilor financiare (total_spending, total_income, savings_rate) pe orice
@@ -211,8 +225,8 @@ make bi-down
 .github/workflows/      # CI (GitHub Actions): ruff/mypy + pytest/dbt build pe Postgres de test
 infra/postgres/init/    # schema SQL rulat automat la primul start al containerului
 scripts/                # utilitare: generatorul de date bancare fake, convertorul extras BT PDF->CSV
-ingestion/              # module Python de ingestie (bank: Faza 1, github: Faza 5)
-dbt_project/            # staging + marts + seeds + snapshots (bank: Faza 2, github: Faza 5)
+ingestion/              # module Python de ingestie (bank: Faza 1, github: Faza 5, strava: Faza 6)
+dbt_project/            # staging + marts + seeds + snapshots (bank: Faza 2, github: Faza 5, strava: Faza 6)
 dags/                   # DAG-uri Airflow (bank_pipeline: Faza 3, github_pipeline: Faza 5, common.py partajat)
 tests/                  # unit tests
 docs/interview-notes.md # note de arhitectură construite fază cu fază
@@ -252,3 +266,6 @@ Versiune scurtă a deciziilor de arhitectură; explicațiile complete, construit
 - **`currency` expus ca dimensiune în semantic layer, nu doar coloană pe fact** — un query cu sume fără unitatea de măsură e ambiguu; `transaction__currency` apare acum direct în output-ul `mf query` (`RON`, singura valută curentă). Ieftin acum, dar pregătește terenul pentru Revolut (sursă multi-valută, deferred separat) — atunci `total_spending` grupat greșit peste valute diferite ar fi o eroare reală, nu doar cosmetică.
 - **Indexuri alese pe motiv concret, nu "index tot"** — `transaction_id` (unic) fiindcă anti-join-ul incremental îl caută la fiecare rulare normală; `date_key`/`merchant_key`/`category_key` fiindcă sunt FK-uri de join Kimball standard; `txn_date` pentru filtrare pe interval. `source_bank` **deliberat neindexat** — 3 valori distincte, selectivitate prea slabă ca un index să bată un Seq Scan, la orice volum realist pentru acest proiect.
 - **Verificat cu `EXPLAIN ANALYZE`, nu presupus** — la 32 rânduri reale, planner-ul Postgres alege Seq Scan pentru un join pe `category_key` (corect: o tabelă de-o pagină nu are ce câștiga dintr-un index lookup). Am simulat temporar ~5.400 rânduri sintetice (bancă goală, BCR, șterse imediat după) și am rulat aceeași interogare: planner-ul a trecut la Bitmap Index Scan pe indexul de `category_key`. Fără simularea asta aș fi putut afirma "am adăugat indexuri" fără nicio dovadă că fac vreo diferență.
+- **`fact_activities`, nu `dim_activity`, pentru activitățile Strava** — o activitate are măsuri reale (distanță, calorii, puls), nu doar atribute descriptive; o dimensiune Kimball nu ar trebui să țină valori agregabile. Grain atomic (un rând = o activitate), exact ca `fact_financial_transactions`; `activity_type` rămâne coloană inline pe fact, nu dimensiune separată — aceeași alegere ca `currency` pe factul financiar, un set mic de valori categorice scopate la un singur fact, nu o dimensiune conformată partajată.
+- **Ingestia Strava a scos la iveală două bug-uri reale, imposibil de prins fără un export adevărat**: coloana generică `Distance` din CSV e în **kilometri**, nu metri (presupunerea inițială, scrisă înainte să existe vreun export real de verificat) — confirmat prin cross-referențiere cu blocul detaliat al header-ului (metri) și `elapsed_time × average_speed`; `Moving Time` e formatat ca float (`"66.0"`) spre deosebire de `Elapsed Time` din același rând (`"66"`) — un `int()` simplu pica. Ambele reparate cu teste de regresie noi, aceeași disciplină ca bug-urile găsite la primul extras bancar real.
+- **`mart_daily_finance_productivity` redenumit în `mart_daily_finance_productivity_fitness`** (nu un mart nou separat) — grain-ul dens pe zi rămâne identic, doar sursele agregate cresc de la două la trei; niciun exposure nu-l consuma încă, deci redenumirea a fost sigură fără nicio migrare de consumatori.

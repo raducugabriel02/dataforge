@@ -1,7 +1,7 @@
 version: 2
 
 models:
-  - name: mart_daily_finance_productivity
+  - name: mart_daily_finance_productivity_fitness
     tests:
       - dbt_expectations.expect_table_row_count_to_be_between:
           arguments:
@@ -15,6 +15,11 @@ models:
               arguments:
                 min_value: 0
       - name: commit_count
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+      - name: total_distance_meters
         tests:
           - dbt_expectations.expect_column_values_to_be_between:
               arguments:

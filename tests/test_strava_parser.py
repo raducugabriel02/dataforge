@@ -49,7 +49,7 @@ def test_parses_walk_and_run_with_only_basic_fields_populated(tmp_path: Path) ->
             _NAME: "Afternoon Walk",
             _ACTIVITY_TYPE: "Walk",
             _ELAPSED_TIME: "1200",
-            _DISTANCE: "1500.5",
+            _DISTANCE: "1.5005",
         }
     )
     run = _row(
@@ -59,7 +59,7 @@ def test_parses_walk_and_run_with_only_basic_fields_populated(tmp_path: Path) ->
             _NAME: "Indoor Run",
             _ACTIVITY_TYPE: "Run",
             _ELAPSED_TIME: "1800",
-            _DISTANCE: "3000",
+            _DISTANCE: "3",
             _MOVING_TIME: "1750",
             _MAX_HR: "168",
             _AVG_HR: "145.5",
@@ -89,6 +89,32 @@ def test_parses_walk_and_run_with_only_basic_fields_populated(tmp_path: Path) ->
     assert second.max_heart_rate == Decimal("168")
     assert second.average_heart_rate == Decimal("145.5")
     assert second.calories == Decimal("320")
+
+
+def test_parses_float_formatted_duration_fields(tmp_path: Path) -> None:
+    # Real Strava export gotcha: Moving Time is written as "66.0", not "66",
+    # while Elapsed Time in the same row is plain "66" — inconsistent within
+    # a single row, a bare int() on Moving Time crashes on the real file.
+    row = _row(
+        {
+            _ACTIVITY_ID: "20201332451",
+            _ACTIVITY_DATE: "Sep 16, 2026, 3:31:54 PM",
+            _NAME: "Alergare in interior",
+            _ACTIVITY_TYPE: "Run",
+            _ELAPSED_TIME: "66",
+            _DISTANCE: "0.15",
+            _MOVING_TIME: "66.0",
+        }
+    )
+    path = _write_csv(tmp_path / "activities.csv", [row])
+
+    result = StravaActivityParser().parse(path)
+
+    assert result.errors == []
+    activity = result.activities[0]
+    assert activity.elapsed_time_seconds == 66
+    assert activity.moving_time_seconds == 66
+    assert activity.distance_meters == Decimal("150.0")
 
 
 def test_skips_corrupt_rows_but_keeps_valid_ones(tmp_path: Path) -> None:

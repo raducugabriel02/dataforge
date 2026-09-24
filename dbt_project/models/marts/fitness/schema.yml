@@ -1,0 +1,54 @@
+version: 2
+
+models:
+  - name: fact_activities
+    # No row-count-min test (same reasoning as fact_daily_productivity): the
+    # Strava source is opt-in, populated from a manual bulk-export drop, so
+    # an empty table is a legitimate fresh-clone state, not a data problem.
+    columns:
+      - name: activity_key
+        tests: [unique, not_null]
+      - name: activity_id
+        tests: [unique, not_null]
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+      - name: activity_type
+        tests:
+          - not_null
+      - name: elapsed_time_seconds
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                max_value: 86400
+      - name: distance_meters
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 0
+                max_value: 500000
+
+  - name: fact_daily_fitness
+    tests:
+      - dbt_utils.unique_combination_of_columns:
+          arguments:
+            combination_of_columns: [date_key]
+    columns:
+      - name: date_key
+        tests:
+          - not_null
+          - relationships:
+              arguments:
+                to: ref('dim_date')
+                field: date_key
+      - name: activity_count
+        tests:
+          - dbt_expectations.expect_column_values_to_be_between:
+              arguments:
+                min_value: 1
+                max_value: 50

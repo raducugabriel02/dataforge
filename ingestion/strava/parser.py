@@ -31,7 +31,11 @@ _IDX_ACTIVITY_DATE = 1
 _IDX_NAME = 2
 _IDX_ACTIVITY_TYPE = 3
 _IDX_ELAPSED_TIME = 5  # generic summary field, populated for every activity type
-_IDX_DISTANCE = 6  # generic summary field, meters (Strava's raw/API unit)
+_IDX_DISTANCE = 6  # generic summary field, kilometers (verified against real
+# export: detailed block's meter-denominated Distance at idx 17, cross-checked
+# via elapsed_time * average_speed, confirms idx 6 is km, not meters as first
+# assumed before any real export existed)
+_KM_TO_METERS = decimal.Decimal(1000)
 _IDX_MAX_HEART_RATE = 7
 _IDX_MOVING_TIME = 16  # not duplicated; only meaningful for GPS-tracked activities
 _IDX_AVERAGE_HEART_RATE = 31
@@ -92,6 +96,14 @@ def _opt(text: str) -> str | None:
     return text or None
 
 
+def _parse_seconds(text: str) -> int:
+    # Strava formats duration fields inconsistently across columns in the same
+    # row (e.g. real export: Elapsed Time "66" but Moving Time "66.0") — parse
+    # via float first so either shape works, instead of a bare int() that
+    # crashes on the ".0" form.
+    return int(float(text))
+
+
 class StravaActivityParser:
     def parse(self, path: Path) -> ParseResult:
         result = ParseResult()
@@ -120,9 +132,9 @@ class StravaActivityParser:
             activity_date=datetime.strptime(row[_IDX_ACTIVITY_DATE].strip(), _DATE_FORMAT),
             name=row[_IDX_NAME],
             activity_type=row[_IDX_ACTIVITY_TYPE],
-            elapsed_time_seconds=int(row[_IDX_ELAPSED_TIME]),
-            distance_meters=decimal.Decimal(row[_IDX_DISTANCE]),
-            moving_time_seconds=int(moving_time) if moving_time else None,
+            elapsed_time_seconds=_parse_seconds(row[_IDX_ELAPSED_TIME]),
+            distance_meters=decimal.Decimal(row[_IDX_DISTANCE]) * _KM_TO_METERS,
+            moving_time_seconds=_parse_seconds(moving_time) if moving_time else None,
             average_heart_rate=decimal.Decimal(avg_hr) if avg_hr else None,
             max_heart_rate=decimal.Decimal(max_hr) if max_hr else None,
             calories=decimal.Decimal(calories) if calories else None,
