@@ -3,49 +3,47 @@
 [![CI](https://github.com/raducugabriel02/dataforge/actions/workflows/ci.yml/badge.svg)](https://github.com/raducugabriel02/dataforge/actions/workflows/ci.yml)
 [![dbt docs](https://github.com/raducugabriel02/dataforge/actions/workflows/docs.yml/badge.svg)](https://raducugabriel02.github.io/dataforge/)
 
-Personal Data Platform & ELT Warehouse — ingest, transformare (medallion: Raw → Staging → Marts) și BI pentru date personale reale, orchestrat automat și rulabil integral local prin Docker Compose.
-
-Detalii complete despre scop, arhitectură, stack și plan pe faze: vezi [CLAUDE.md](CLAUDE.md).
+Personal Data Platform & ELT Warehouse — ingestion, transformation (medallion: Raw → Staging → Marts), and BI for real personal data, fully automated and runnable locally via Docker Compose.
 
 ## Status
 
-**Faza 0-4 (v1, sursa bancară) și Faza 5 (v2, sursa GitHub)** sunt complete, verificate live cu date reale. Peste plan, cu accent pe utilitate reală (nu doar narativ de portofoliu): dashboard Metabase extins (venituri/cashflow, sold pe bancă, weekend vs weekday) și **alerte financiare pe email** (buget pe categorie, sold sub prag, tranzacție mare) — vezi [Design Decisions](#design-decisions).
+**Phases 0-4 (v1, bank source) and Phase 5 (v2, GitHub source)** are complete, verified live with real data. Beyond the original plan, with a focus on genuine usefulness (not just portfolio narrative): an expanded Metabase dashboard (income/cashflow, balance per bank, weekend vs. weekday) and **financial alerts via email** (category budget, balance below threshold, large transaction) — see [Design Decisions](#design-decisions).
 
-**CI (GitHub Actions)** adăugat — `ruff`/`mypy` la fiecare push/PR, plus `pytest`/`dbt build` complet rulate împotriva unui Postgres de test izolat (nu Postgres-ul de dezvoltare din `docker-compose.yml`). Vezi [Design Decisions](#design-decisions).
+**CI (GitHub Actions)** added — `ruff`/`mypy` on every push/PR, plus a full `pytest`/`dbt build` run against an isolated test Postgres (not the development Postgres from `docker-compose.yml`). See [Design Decisions](#design-decisions).
 
-**Faza 6 (v3, Strava)** — completă: ingestie + dbt + orchestrare Airflow, verificate live cu primul export real (3 activități, ceas Huawei sincronizat cu Strava). Exportul real a confirmat doi bug-uri latente nedescoperibile fără date reale: coloana generică `Distance` e în **kilometri**, nu metri cum presupusesem inițial, și `Moving Time` e formatat ca float (`"66.0"`) spre deosebire de `Elapsed Time` din același rând (`"66"`). `raw.strava_activities` (upsert, entitate mutabilă), `fact_activities` (grain atomic, ca `fact_financial_transactions`) și `fact_daily_fitness` (agregat pe zi) intră în `mart_daily_finance_productivity_fitness`, redenumit din varianta doar finanțe×productivitate. `strava_pipeline` (al treilea DAG) verificat live cu ciclul complet roșu→verde (test dbt stricat intenționat → alertă → reparat). Vezi [Design Decisions](#design-decisions).
+**Phase 6 (v3, Strava)** — complete: ingestion + dbt + Airflow orchestration, verified live with the first real export (3 activities, Huawei watch synced with Strava). The real export uncovered two latent bugs that were undiscoverable without real data: the generic `Distance` column is in **kilometers**, not meters as originally assumed, and `Moving Time` is formatted as a float (`"66.0"`) unlike `Elapsed Time` from the same row (`"66"`). `raw.strava_activities` (upsert, mutable entity), `fact_activities` (atomic grain, like `fact_financial_transactions`), and `fact_daily_fitness` (daily aggregate) feed into `mart_daily_finance_productivity_fitness`, renamed from the finance×productivity-only variant. `strava_pipeline` (the third DAG) verified live through the full red→green cycle (a dbt test intentionally broken → alert → fixed). See [Design Decisions](#design-decisions).
 
-**Hardening dbt** adăugat: teste unitare pe logica de tie-break merchant și pe join-ul point-in-time SCD2 (regresii directe pentru bug-urile găsite pe date reale), **model contracts** (`contract: enforced`) pe cele 4 marts financiare, și **exposures** care leagă dashboard-ul Metabase și modulul de alerte email în lineage-ul `dbt docs`. Teste unitare complete și pentru `ingestion/github/`/`ingestion/alerts/` (înainte doar verificate live). Vezi [Design Decisions](#design-decisions).
+**dbt hardening** added: unit tests on the merchant tie-break logic and on the point-in-time SCD2 join (direct regressions for the bugs found on real data), **model contracts** (`contract: enforced`) on the 4 financial marts, and **exposures** linking the Metabase dashboard and the email alerts module into the `dbt docs` lineage. Full unit tests also added for `ingestion/github/`/`ingestion/alerts/` (previously only verified live). See [Design Decisions](#design-decisions).
 
-**Sănătate financiară** adăugat: `mart_account_balances` (periodic snapshot fact, sold de sfârșit de lună per bancă, forward-fill pe lunile fără tranzacții) și `mart_financial_health` (savings rate, net worth + trend pe 3 luni, forecast de cheltuieli via regresie liniară în SQL pur), expuse într-un dashboard Metabase nou ("Sănătate Financiară"). Vezi [Design Decisions](#design-decisions).
+**Financial health** added: `mart_account_balances` (periodic snapshot fact, end-of-month balance per bank, forward-filled for months with no transactions) and `mart_financial_health` (savings rate, net worth + 3-month trend, spending forecast via linear regression in pure SQL), exposed in a new Metabase dashboard ("Financial Health"). See [Design Decisions](#design-decisions).
 
-**`fact_financial_transactions` e acum incremental** (`unique_key: transaction_id`), închizând un decalaj real față de regula de arhitectură #2 din CLAUDE.md — restul marts-urilor rămân `table`, deliberat, nu din inerție. Vezi [Design Decisions](#design-decisions).
+**`fact_financial_transactions` is now incremental** (`unique_key: transaction_id`), closing a real gap against the project's own idempotency rule — the rest of the marts stay `table`, deliberately, not out of inertia. See [Design Decisions](#design-decisions).
 
-**dbt Semantic Layer (MetricFlow)** adăugat — o singură definiție pentru `total_spending`/`total_income`/`savings_rate` (peste `fact_financial_transactions`, aceeași formulă ca `mart_financial_health`), interogabilă generativ pe orice combinație de dimensiuni (categorie, merchant, bancă, lună, weekend/weekday) fără SQL nou per combinație. Rulează 100% local (`dbt-metricflow`, fără dbt Cloud). Verificat live: `savings_rate` din query coincide exact cu valoarea deja materializată în `mart_financial_health`. Vezi [Design Decisions](#design-decisions).
+**dbt Semantic Layer (MetricFlow)** added — a single definition for `total_spending`/`total_income`/`savings_rate` (over `fact_financial_transactions`, same formula as `mart_financial_health`), queryable generatively over any combination of dimensions (category, merchant, bank, month, weekend/weekday) without new SQL per combination. Runs fully locally (`dbt-metricflow`, no dbt Cloud). Verified live: the `savings_rate` from the query matches exactly the value already materialized in `mart_financial_health`. See [Design Decisions](#design-decisions).
 
-**`dbt docs` publicat live pe GitHub Pages**: [raducugabriel02.github.io/dataforge](https://raducugabriel02.github.io/dataforge/) — lineage-ul complet (surse, exposures, metrici, semantic models), regenerat automat la fiecare push pe `master` (`.github/workflows/docs.yml`), peste relații reale construite în CI, nu doar graful static. Repo-ul e public (verificat anterior: zero date reale în istoric, doar date sintetice). Vezi [Design Decisions](#design-decisions).
+**`dbt docs` published live on GitHub Pages**: [raducugabriel02.github.io/dataforge](https://raducugabriel02.github.io/dataforge/) — the full lineage (sources, exposures, metrics, semantic models), regenerated automatically on every push to `master` (`.github/workflows/docs.yml`), built from real relationships in CI, not just a static graph. The repo is public (previously verified: zero real data in history, only synthetic data). See [Design Decisions](#design-decisions).
 
-**Indexare Postgres pe `fact_financial_transactions`** (`transaction_id` unic, `date_key`/`merchant_key`/`category_key`/`txn_date`) — verificat cu `EXPLAIN ANALYZE`, nu doar adăugat: la volumul curent (32 rânduri) Postgres alege corect Seq Scan (indexul n-ar ajuta la o tabelă de-o pagină), dar la volum simulat (~5.400 rânduri sintetice, șterse după test) planner-ul trece la Bitmap Index Scan pe `category_key` — dovadă live, nu presupunere. Deliberat fără index pe `source_bank` (doar 3 valori, cardinalitate prea mică). Vezi [Design Decisions](#design-decisions).
+**Postgres indexing on `fact_financial_transactions`** (`transaction_id` unique, `date_key`/`merchant_key`/`category_key`/`txn_date`) — verified with `EXPLAIN ANALYZE`, not just added: at current volume (32 rows) Postgres correctly chooses a Seq Scan (an index wouldn't help on a one-page table), but at a simulated volume (~5,400 synthetic rows, deleted after the test) the planner switches to a Bitmap Index Scan on `category_key` — live evidence, not assumption. Deliberately no index on `source_bank` (only 3 distinct values, too low cardinality). See [Design Decisions](#design-decisions).
 
-**Teste de idempotență pentru `GitHubRawLoader`/`StravaRawLoader` și teste unitare pentru `dags/common.py`** — ambele existau doar verificate live în sesiuni anterioare, niciodată prinse într-o regresie automată. Acum acoperite: upsert pe entitate mutabilă (repo/PR/activitate — inclusiv verificarea că un câmp schimbat chiar se reflectă la re-load, nu doar că nu duplică), append-only dedup pe commit-uri, și `notify_discord_failure`/`dbt_command` (stdlib pur, testabile fără Airflow instalat local). 70 teste, toate verzi.
+**Idempotency tests for `GitHubRawLoader`/`StravaRawLoader` and unit tests for `dags/common.py`** — both previously only verified live in earlier sessions, never caught by an automated regression. Now covered: upsert on a mutable entity (repo/PR/activity — including verifying that a changed field actually reflects on re-load, not just that it doesn't duplicate), append-only dedup on commits, and `notify_discord_failure`/`dbt_command` (pure stdlib, testable without Airflow installed locally). 70 tests, all green.
 
-## Arhitectură
+## Architecture
 
 ```mermaid
 flowchart LR
-    subgraph src["Surse"]
-        csv["Extrase CSV<br/>BT / BCR / ING"]
-        gh["GitHub REST API<br/>repos / commits / PR-uri"]
+    subgraph src["Sources"]
+        csv["Bank CSV statements<br/>BT / BCR / ING"]
+        gh["GitHub REST API<br/>repos / commits / PRs"]
         strava["Strava bulk export<br/>activities.csv (manual)"]
     end
 
-    subgraph ingest["Ingestie Python (idempotentă)"]
+    subgraph ingest["Python ingestion (idempotent)"]
         parser["BankStatementParser"]
-        loader["RawLoader<br/>dedup pe _row_hash"]
-        ghclient["GitHubClient<br/>paginare + retry pe rate limit"]
-        ghloader["GitHubRawLoader<br/>upsert (mutabil) / dedup (imuabil)"]
-        stravaparser["StravaActivityParser<br/>citire pozițională (header duplicat)"]
-        stravaloader["StravaRawLoader<br/>upsert (mutabil)"]
+        loader["RawLoader<br/>dedup on _row_hash"]
+        ghclient["GitHubClient<br/>pagination + retry on rate limit"]
+        ghloader["GitHubRawLoader<br/>upsert (mutable) / dedup (immutable)"]
+        stravaparser["StravaActivityParser<br/>positional read (duplicate header)"]
+        stravaloader["StravaRawLoader<br/>upsert (mutable)"]
     end
 
     subgraph dwh["Postgres — DWH (medallion)"]
@@ -60,15 +58,15 @@ flowchart LR
         budgetmart[("marts.mart_budget_alerts")]
     end
 
-    subgraph orch["Airflow — profil 'airflow'"]
+    subgraph orch["Airflow — 'airflow' profile"]
         dag["bank_pipeline DAG<br/>TaskFlow API"]
         ghdag["github_pipeline DAG<br/>TaskFlow API, dynamic mapping"]
         stravadag["strava_pipeline DAG<br/>TaskFlow API"]
         alertcheck["check_alerts<br/>AlertChecker + EmailSender"]
-        afdb[("Postgres<br/>metadata Airflow")]
+        afdb[("Postgres<br/>Airflow metadata")]
     end
 
-    subgraph bi["Metabase — profil 'bi'"]
+    subgraph bi["Metabase — 'bi' profile"]
         dash["Dashboards"]
         mbdb[("H2<br/>app db")]
     end
@@ -84,14 +82,14 @@ flowchart LR
     fitnessmart --> combined
     marts --> budgetmart
     marts --> dash
-    dag -. orchestrează .-> parser
+    dag -. orchestrates .-> parser
     dag -. "dbt run/test tag:bank" .-> staging
-    dag -. "după dbt_test, best-effort" .-> alertcheck
+    dag -. "after dbt_test, best-effort" .-> alertcheck
     alertcheck -. query .-> budgetmart
     alertcheck -. "email (SMTP)" .-> email[/"Inbox"/]
-    ghdag -. orchestrează .-> ghclient
+    ghdag -. orchestrates .-> ghclient
     ghdag -. "dbt run/test tag:github,combined" .-> staging
-    stravadag -. orchestrează .-> stravaparser
+    stravadag -. orchestrates .-> stravaparser
     stravadag -. "dbt run/test tag:strava,combined" .-> staging
     dag --- afdb
     ghdag --- afdb
@@ -99,64 +97,66 @@ flowchart LR
     dash --- mbdb
 ```
 
-Trei Postgres logic separate, fiecare cu un motiv concret (nu izolare "din reflex" — detalii în [Design Decisions](#design-decisions)): DWH-ul de mai sus, metadata Airflow (scheduler + webserver scriu concurent), și app DB-ul Metabase (H2 embedded, nu Postgres — un singur proces, fără concurrency reală).
+Three logically separate Postgres instances, each for a concrete reason (not "reflex" isolation — details in [Design Decisions](#design-decisions)): the DWH above, Airflow metadata (scheduler + webserver write concurrently), and the Metabase app DB (embedded H2, not Postgres — a single process, no real concurrency).
 
 ## Quickstart
 
 ```bash
 cp .env.example .env
-# dacă ai deja alt Postgres pe portul 5432 (local sau alt proiect Docker),
-# schimbă POSTGRES_PORT din .env înainte de a porni containerul
+# if you already have another Postgres on port 5432 (local or another Docker
+# project), change POSTGRES_PORT in .env before starting the container
 docker compose up -d
 
-python -m venv .venv && source .venv/bin/activate   # sau .venv\Scripts\activate pe Windows
+python -m venv .venv && source .venv/bin/activate   # or .venv\Scripts\activate on Windows
 pip install -e ".[dev]"
 
 python -m scripts.generate_fake_bank_data --bank all --months 6
 
-# rulează testele cu variabilele din .env încărcate în mediu
+# run the tests with the variables from .env loaded into the environment
 set -a && . ./.env && set +a
 pytest -v
 ruff check . && mypy .
 
-# ingest efectiv al unui extras (idempotent — poți rula de mai multe ori)
+# actual ingestion of a statement (idempotent — safe to run multiple times)
 python -m ingestion --bank bt data/sample/bt_statement.csv
 python -m ingestion --bank bcr data/sample/bcr_statement.csv
 python -m ingestion --bank ing data/sample/ing_statement.csv
 
-# BT24 nu oferă mereu export CSV/Excel, doar PDF — convertorul reconstruiește
-# soldul per-tranzacție (validat contra soldului zilnic raportat de bancă) și
-# scrie un CSV în formatul exact așteptat de BTParser, apoi ingest-ul normal
+# BT24 doesn't always offer a CSV/Excel export, only PDF — the converter
+# reconstructs the per-transaction balance (validated against the daily
+# balance reported by the bank) and writes a CSV in the exact format
+# expected by BTParser, then regular ingestion follows
 pip install -e ".[pdf]"
 python -m scripts.convert_bt_pdf_statement data/private/extras_bt.pdf data/private/extras_bt.csv
 python -m ingestion --bank bt data/private/extras_bt.csv
 
-# instalează dbt (grup separat de dependențe, ține pinurile departe de restul proiectului)
+# install dbt (separate dependency group, keeps pins away from the rest of the project)
 pip install -e ".[dbt]"
 
-# transformare: seed -> snapshot (SCD2) -> run -> test, sau toate deodată cu build
+# transformation: seed -> snapshot (SCD2) -> run -> test, or all at once with build
 dbt deps --project-dir dbt_project --profiles-dir dbt_project
 dbt build --project-dir dbt_project --profiles-dir dbt_project
 
-# lineage + documentație interactivă
+# lineage + interactive documentation
 dbt docs generate --project-dir dbt_project --profiles-dir dbt_project
 dbt docs serve --project-dir dbt_project --profiles-dir dbt_project
 
-# sursa GitHub (Faza 5, v2) — completează GITHUB_TOKEN (fine-grained PAT, read-only
-# pe Contents/Metadata/Pull requests) și GITHUB_USERNAME în .env, apoi:
+# GitHub source (Phase 5, v2) — fill in GITHUB_TOKEN (fine-grained PAT,
+# read-only on Contents/Metadata/Pull requests) and GITHUB_USERNAME in .env, then:
 python -m ingestion.github
 dbt build --project-dir dbt_project --profiles-dir dbt_project --select tag:github tag:combined
 
-# sursa Strava (Faza 6, v3) — export manual (Strava limitează la o dată/săptămână):
+# Strava source (Phase 6, v3) — manual export (Strava limits to one per week):
 # strava.com -> Settings -> My Account -> Download or Delete Your Account ->
-# Download Request. Dezarhivează în data/private/strava_export_raw/, apoi:
+# Download Request. Unzip into data/private/strava_export_raw/, then:
 python -m ingestion.strava data/private/strava_export_raw/activities.csv
 dbt build --project-dir dbt_project --profiles-dir dbt_project --select tag:strava tag:combined
 
-# Semantic Layer (MetricFlow, local, fara dbt Cloud) — interogare generativa a
-# metricilor financiare (total_spending, total_income, savings_rate) pe orice
-# combinatie de dimensiuni (categorie, merchant, banca, luna, weekend/weekday),
-# fara SQL nou. Necesita dbt build rulat macar o data (genereaza target/semantic_manifest.json).
+# Semantic Layer (MetricFlow, local, no dbt Cloud) — generative querying of
+# financial metrics (total_spending, total_income, savings_rate) over any
+# combination of dimensions (category, merchant, bank, month, weekend/weekday),
+# without new SQL. Requires dbt build to have run at least once (generates
+# target/semantic_manifest.json).
 pip install -e ".[semantic-layer]"
 cd dbt_project
 mf validate-configs
@@ -165,54 +165,54 @@ mf query --metrics total_spending --group-by category__category_group
 cd ..
 ```
 
-> Pe Windows cu Python 3.14, executabilele `dbt.exe`/`pip.exe` pot crăpa silențios (issue de mediu, nu de proiect) — folosește `python -m pip ...` și, pentru dbt, `python -c "from dbt.cli.main import cli; cli()" <comandă>` în loc de `dbt <comandă>` direct.
+> On Windows with Python 3.14, the `dbt.exe`/`pip.exe` executables can crash silently (an environment issue, not a project one) — use `python -m pip ...` and, for dbt, `python -c "from dbt.cli.main import cli; cli()" <command>` instead of calling `dbt <command>` directly.
 
-> Tot pe Windows: `mf` (dbt-metricflow) poate eșua cu `cannot use a string pattern on a bytes-like object` — spinner-ul `halo` scrie caractere Unicode pe o consolă `cp1252`. Rulează cu `PYTHONIOENCODING=utf-8` înainte de `mf` (ex. `PYTHONIOENCODING=utf-8 mf validate-configs`).
+> Also on Windows: `mf` (dbt-metricflow) can fail with `cannot use a string pattern on a bytes-like object` — the `halo` spinner writes Unicode characters to a `cp1252` console. Run with `PYTHONIOENCODING=utf-8` before `mf` (e.g. `PYTHONIOENCODING=utf-8 mf validate-configs`).
 
-> Comenzile `make` din `Makefile` (`make up`, `make test`, etc.) fac exact pașii de mai sus. Necesită GNU Make instalat — nu vine implicit pe Windows.
+> The `make` commands in the `Makefile` (`make up`, `make test`, etc.) do exactly the steps above. Requires GNU Make installed — not available by default on Windows.
 
-### Airflow (Faza 3 + 5 + 6)
+### Airflow (Phase 3 + 5 + 6)
 
-Rulează într-un **profil Docker separat** (`airflow`), nepornit de `make up` — Airflow consumă ~4GB RAM, deci rămâne opțional cât lucrezi pe dbt/ingestie:
+Runs in a **separate Docker profile** (`airflow`), not started by `make up` — Airflow consumes ~4GB RAM, so it stays optional while working on dbt/ingestion:
 
 ```bash
-# completează AIRFLOW_FERNET_KEY în .env (vezi comentariul din .env.example)
+# fill in AIRFLOW_FERNET_KEY in .env (see the comment in .env.example)
 make airflow-up
-# asteapta pana serviciile sunt "healthy"
+# wait until the services are "healthy"
 make airflow-logs
 ```
 
-UI la http://localhost:8080 (user/parolă din `AIRFLOW_ADMIN_USER`/`AIRFLOW_ADMIN_PASSWORD`, implicit `admin`/`admin`). Trei DAG-uri, zilnice, fiecare cu propria alertă Discord la eșec (`dags/common.py`, folosit de toate):
+UI at http://localhost:8080 (user/password from `AIRFLOW_ADMIN_USER`/`AIRFLOW_ADMIN_PASSWORD`, default `admin`/`admin`). Three daily DAGs, each with its own Discord failure alert (`dags/common.py`, shared by all):
 
-- **`bank_pipeline`** — verifică `data/private/` (fallback `data/sample/`) pentru CSV-uri noi, le ingerează idempotent, apoi `dbt seed → snapshot → run → test` (tag `bank`), apoi `check_alerts` — rulează `AlertChecker` (buget depășit pe categorie, sold sub prag, tranzacție neobișnuit de mare) și trimite un email consolidat dacă ceva s-a declanșat.
-- **`github_pipeline`** (Faza 5) — ingerează repos, apoi (dynamic task mapping, un task per repo) commit-uri + PR-uri, apoi `dbt run/test` pe `tag:github` + `tag:combined` (reconstruiește și mart-ul combinat finanțe×productivitate×fitness). Cere `GITHUB_TOKEN`/`GITHUB_USERNAME` completate în `.env` — altfel task-ul de ingest eșuează cu un mesaj clar, nu silențios.
-- **`strava_pipeline`** (Faza 6) — spre deosebire de `github_pipeline` (poll live API), sursa e un export manual: caută `data/private/strava_export_raw/activities.csv`, îl ingerează idempotent (upsert pe `activity_id`), apoi `dbt run/test` pe `tag:strava` + `tag:combined`. Fără fișier nou, task-ul `ingest` reușește oricum (returnează explicit "niciun export Strava de ingerat"), dbt rulează pe datele deja existente.
+- **`bank_pipeline`** — checks `data/private/` (falls back to `data/sample/`) for new CSV files, ingests them idempotently, then `dbt seed → snapshot → run → test` (tag `bank`), then `check_alerts` — runs `AlertChecker` (budget exceeded per category, balance below threshold, unusually large transaction) and sends a consolidated email if anything triggered.
+- **`github_pipeline`** (Phase 5) — ingests repos, then (dynamic task mapping, one task per repo) commits + PRs, then `dbt run/test` on `tag:github` + `tag:combined` (also rebuilds the combined finance×productivity×fitness mart). Requires `GITHUB_TOKEN`/`GITHUB_USERNAME` filled in `.env` — otherwise the ingest task fails with a clear message, not silently.
+- **`strava_pipeline`** (Phase 6) — unlike `github_pipeline` (polls a live API), the source is a manual export: looks for `data/private/strava_export_raw/activities.csv`, ingests it idempotently (upsert on `activity_id`), then `dbt run/test` on `tag:strava` + `tag:combined`. With no new file, the `ingest` task still succeeds (explicitly returns "no Strava export to ingest"), and dbt runs on the already-existing data.
 
-Un test dbt picat oprește pipeline-ul respectiv — verificat live și pentru `strava_pipeline` (test `distance_meters` stricat intenționat → `dbt_test` roșu, `check_source`/`ingest`/`dbt_run` rămân verzi, alerta Discord încearcă să trimită și loghează clar dacă webhook-ul nu e setat → reparat → verde din nou, exact ciclul verificat prima dată la Faza 3 pe `bank_pipeline`). `check_alerts` e diferit: e best-effort — completează `SMTP_USER`/`SMTP_PASSWORD`/`ALERT_EMAIL_TO` în `.env` (Gmail cere un [App Password](https://myaccount.google.com/apppasswords), nu parola de cont) ca să chiar primești email; necompletat, task-ul tot rulează și reușește, doar sare peste trimitere (vezi [Design Decisions](#design-decisions)).
+A failing dbt test stops the respective pipeline — verified live for `strava_pipeline` too (the `distance_meters` test intentionally broken → `dbt_test` goes red, `check_source`/`ingest`/`dbt_run` stay green, the Discord alert attempts to send and logs clearly if the webhook isn't set → fixed → green again, the exact cycle first verified in Phase 3 on `bank_pipeline`). `check_alerts` is different: it's best-effort — fill in `SMTP_USER`/`SMTP_PASSWORD`/`ALERT_EMAIL_TO` in `.env` (Gmail requires an [App Password](https://myaccount.google.com/apppasswords), not your account password) to actually receive email; left unfilled, the task still runs and succeeds, it just skips sending (see [Design Decisions](#design-decisions)).
 
 ```bash
-make airflow-down   # oprește doar serviciile Airflow, Postgres-ul de date rămâne pornit separat
+make airflow-down   # stops only the Airflow services, the data Postgres keeps running separately
 ```
 
-### Metabase (Faza 4)
+### Metabase (Phase 4)
 
-La fel, profil Docker separat (`bi`), opt-in:
+Also a separate Docker profile (`bi`), opt-in:
 
 ```bash
 make bi-up
 ```
 
-UI la http://localhost:3000 — primul start cere setup: creezi contul de admin local (nume/email/parolă — rămân doar în fișierul H2 din containerul tău, nu pleacă nicăieri) și conexiunea la Postgres:
+UI at http://localhost:3000 — the first start requires setup: you create the local admin account (name/email/password — stays only in the H2 file inside your container, never leaves) and the Postgres connection:
 
-| Câmp | Valoare |
+| Field | Value |
 |---|---|
-| Host | `postgres` (numele serviciului din docker-compose, nu `localhost`) |
+| Host | `postgres` (the service name from docker-compose, not `localhost`) |
 | Port | `5432` |
-| Database name | `POSTGRES_DB` din `.env` |
-| Username / Password | `POSTGRES_USER` / `POSTGRES_PASSWORD` din `.env` |
-| Use a secure connection (SSL) | **nebifat** — Postgres-ul local rulează fără SSL configurat |
+| Database name | `POSTGRES_DB` from `.env` |
+| Username / Password | `POSTGRES_USER` / `POSTGRES_PASSWORD` from `.env` |
+| Use a secure connection (SSL) | **unchecked** — the local Postgres runs without SSL configured |
 
-Dashboard-ul `Cheltuieli — Overview` (cheltuieli pe categorii, trend lunar cu medie mobilă 3 luni, top merchants, venituri vs cheltuieli pe lună, cumulative spending, sold în timp pe bancă, cheltuieli weekend vs weekday) e construit direct în UI din `marts.*`, nu versionat în git — Metabase își ține definițiile în propriul app DB (H2), nu în fișiere. Chart-urile de venituri/cashflow folosesc coloanele `total_income`/`net_cashflow` adăugate în `mart_monthly_spending`; cele de sold și weekend-vs-weekday sunt native SQL questions direct peste `marts.fact_financial_transactions`/`marts.dim_date`, fiindcă sunt vizualizări unice, fără nevoie de un model dbt reutilizabil.
+The `Spending — Overview` dashboard (spending by category, monthly trend with 3-month moving average, top merchants, income vs. spending by month, cumulative spending, balance over time per bank, weekend vs. weekday spending) is built directly in the UI from `marts.*`, not version-controlled in git — Metabase keeps its definitions in its own app DB (H2), not in files. The income/cashflow charts use the `total_income`/`net_cashflow` columns added to `mart_monthly_spending`; the balance and weekend-vs-weekday charts are native SQL questions directly over `marts.fact_financial_transactions`/`marts.dim_date`, since they're one-off visualizations with no need for a reusable dbt model.
 
 ```bash
 make bi-down
@@ -220,60 +220,60 @@ make bi-down
 
 ## Demo
 
-| dbt lineage graph | Dashboard Metabase |
+| dbt lineage graph | Metabase dashboard |
 |---|---|
 | ![dbt lineage](docs/screenshots/dbt-lineage.jpg) | ![Metabase dashboard](docs/screenshots/metabase-dashboard.jpg) |
 
-![Metabase dashboard, continuare](docs/screenshots/metabase-dashboard-2.jpg)
+![Metabase dashboard, continued](docs/screenshots/metabase-dashboard-2.jpg)
 
-## Structură
+## Structure
 
 ```
-.github/workflows/      # CI (GitHub Actions): ruff/mypy + pytest/dbt build pe Postgres de test
-infra/postgres/init/    # schema SQL rulat automat la primul start al containerului
-scripts/                # utilitare: generatorul de date bancare fake, convertorul extras BT PDF->CSV
-ingestion/              # module Python de ingestie (bank: Faza 1, github: Faza 5, strava: Faza 6)
-dbt_project/            # staging + marts + seeds + snapshots (bank: Faza 2, github: Faza 5, strava: Faza 6)
-dags/                   # DAG-uri Airflow (bank_pipeline: Faza 3, github_pipeline: Faza 5, strava_pipeline: Faza 6, common.py partajat)
+.github/workflows/      # CI (GitHub Actions): ruff/mypy + pytest/dbt build on a test Postgres
+infra/postgres/init/    # schema SQL run automatically on the container's first start
+scripts/                # utilities: fake bank data generator, BT PDF->CSV statement converter
+ingestion/              # Python ingestion modules (bank: Phase 1, github: Phase 5, strava: Phase 6)
+dbt_project/            # staging + marts + seeds + snapshots (bank: Phase 2, github: Phase 5, strava: Phase 6)
+dags/                   # Airflow DAGs (bank_pipeline: Phase 3, github_pipeline: Phase 5, strava_pipeline: Phase 6, shared common.py)
 tests/                  # unit tests
-docs/interview-notes.md # note de arhitectură construite fază cu fază
-docs/screenshots/       # capturi pentru README (lineage dbt, dashboard Metabase)
+docs/design-decisions.md # architecture decisions, recorded as they were made
+docs/screenshots/       # README screenshots (dbt lineage, Metabase dashboard)
 ```
 
-## Date
+## Data
 
-Repo-ul public conține **doar date sintetice**. Datele financiare reale stau local, în `data/private/` (gitignored) — niciodată în git.
+The public repo contains **only synthetic data**. Real financial data stays local, in `data/private/` (gitignored) — never in git.
 
-Extrasul real BT vine ca PDF, nu CSV — `scripts/convert_bt_pdf_statement.py` îl convertește local (vezi Quickstart), fișierele rezultate rămân tot în `data/private/`.
+The real BT statement comes as a PDF, not CSV — `scripts/convert_bt_pdf_statement.py` converts it locally (see Quickstart); the resulting files stay in `data/private/` too.
 
 ## Design Decisions
 
-Versiune scurtă a deciziilor de arhitectură; explicațiile complete, construite fază cu fază, sunt în [docs/interview-notes.md](docs/interview-notes.md).
+Short version of the architecture decisions; the full write-ups, recorded as they were made, are in [docs/design-decisions.md](docs/design-decisions.md).
 
-- **Scheme separate (`raw`/`staging`/`marts`) într-un singur Postgres, nu baze de date separate** — medallion e o convenție de organizare a datelor, nu un motiv de izolare la nivel de proces; un singur Postgres ține costul (RAM, conexiuni de gestionat) minim cât timp nu există concurrency reală între straturi.
-- **Postgres separat pentru metadata Airflow** — scheduler-ul și webserver-ul scriu/citesc concurent, non-stop, în metadata (DAG runs, task instances); amestecat cu DWH-ul ar fi cuplat două cicluri de viață diferite (`make clean` pe unul nu trebuie să-l afecteze pe celălalt).
-- **H2 embedded pentru app DB-ul Metabase, nu Postgres** — un singur proces, un singur user local, scrieri doar manuale (salvezi un dashboard) — nicio concurrency reală de rezolvat. Diferă de cazul Airflow de mai sus exact prin lipsa acestei concurențe; regula e "izolezi când există un motiv concret", nu izolare din reflex.
-- **Idempotență la fiecare strat, nu doar la ingest** — dedup pe `_row_hash` în `raw`, `dbt seed`/`snapshot`/`run` toate sigure la re-rulare (detalii: [Idempotența end-to-end](docs/interview-notes.md#idempotența-end-to-end-după-faza-3)) — un DAG zilnic *va* rula de mai multe ori peste aceleași date (retry, restart), și fiecare pas trebuie să reziste la asta independent.
-- **SCD Type 2 via `dbt snapshot`, nu `updated_at` simplu pe categorii** — categoriile de cheltuieli se schimbă în timp; păstrăm istoricul (`valid_from`/`valid_to`/`is_current`) ca un raport din trecut să folosească categoria validă *atunci*, nu cea curentă.
-- **Airflow și Metabase în profiluri Docker opt-in (`airflow`, `bi`), nu în `make up`** — Airflow consumă ~4GB RAM; separarea permite să lucrezi pe ingestie/dbt fără costul lor, pornindu-le explicit doar când ai nevoie.
-- **Idempotența la sursa GitHub aleasă per entitate, nu copiată din bank** — `raw.github_commits` e append-only cu dedup pe `(repo_full_name, sha)` ca `raw.bank_transactions`, dar `raw.github_repositories`/`raw.github_pull_requests` fac **upsert**: sunt entități mutabile (starea unui PR, `pushed_at`-ul unui repo), deci raw ține doar ultima stare cunoscută, nu un istoric. Detalii: [Extensibilitatea arhitecturii](docs/interview-notes.md#extensibilitatea-arhitecturii-pe-o-a-doua-sursă-după-faza-5).
-- **`fact_daily_productivity` e sparse (doar zile cu activitate), `mart_daily_finance_productivity` e dense (fiecare zi din intervalul activ)** — un fapt Kimball ține doar evenimente reale; un mart pentru corelații are nevoie de zerouri explicite, altfel o zi fără commit-uri ar lipsi din analiză în loc să fie un punct de date real.
-- **Alertele pe email sunt best-effort, nu o precondiție a pipeline-ului** — la fel ca alerta Discord de eșec (`dags/common.py`), `check_alerts` prinde orice excepție la trimiterea emailului și doar o loghează; task-ul reușește chiar dacă SMTP-ul e nesetat sau serverul de mail e jos. Diferă totuși de eșecul unui test dbt: un test dbt picat înseamnă *date suspecte*, deci pipeline-ul trebuie să se oprească; o alertă netrimisă înseamnă doar *n-am reușit să te anunț*, datele rămân corecte — nu-i același nivel de gravitate, deci nu tratăm eșecul la fel.
-- **`mart_budget_alerts` e un mart separat, nu extinde `mart_monthly_spending`** — grain-ul diferă (doar categoriile cu buget definit, via inner join pe seed-ul `category_budgets`) și scopul e altul (verificare operațională, nu raportare generală); un mart de agregare Kimball nu trebuie să devină locul unde bag orice query are nevoie de el.
-- **CI rulează pe un Postgres de test efemer (service container), nu pe Postgres-ul din `docker-compose.yml`** — job-ul de `test` pornește un `postgres:16` gol, îl inițializează cu aceleași SQL-uri din `infra/postgres/init/`, generează date sintetice, le ingerează și rulează `pytest`+`dbt build` complet peste el; containerul dispare la finalul job-ului. Așa CI verifică repo-ul așa cum ar arăta la un `git clone` proaspăt, nu peste starea locală acumulată a autorului. Service container-ele din Actions pornesc *înainte* de `actions/checkout`, deci nu poți monta `infra/postgres/init/` ca `/docker-entrypoint-initdb.d` (fișierele repo-ului încă nu există pe disc la acel moment) — scripturile SQL sunt rulate explicit, ca pas separat, după checkout.
-- **dbt unit tests pe logica din SQL, nu doar `data tests` pe rezultatul final** — un `data test` verifică datele *după* ce modelul a rulat peste tabele reale; un `unit test` dă rânduri fixe modelului și verifică output-ul exact, fără nicio dependență de starea curentă a warehouse-ului. Le-am scris punctual pe cele două bug-uri reale găsite la încărcarea datelor (fan-out la merchant, join SCD2 greșit) — regresie garantată dacă cineva scoate din greșeală `row_number()`/tie-break-ul din model, verificat live inversând temporar fix-ul și confirmând că testul pică.
-- **Model contracts (`contract: enforced: true`) pe cele 4 marts financiare** — `dbt build` compară tipurile de coloană declarate în `schema.yml` cu ce produce efectiv SQL-ul modelului și **blochează build-ul** la orice discrepanță de nume/tip/număr de coloane, înainte ca tabela să fie scrisă. Pus punctual pe `mart_budget_alerts` (singurul mart citit prin SQL brut din `ingestion/alerts/checker.py`, nu doar din alte modele dbt — o redenumire acolo n-ar fi prinsă de niciun test dbt normal) și pe `mart_monthly_spending` (consumat direct de Metabase, care nu rulează teste dbt). Efect secundar util: dbt a avertizat că mai multe coloane `numeric` fără precizie explicită riscau rotunjire silențioasă — rezolvat cu `cast(... as numeric(14,2))` în modele.
-- **Exposures** — `metabase_cheltuieli_overview` și `email_budget_alerts` declară în dbt cine consumă efectiv fiecare mart (dashboard-ul Metabase, respectiv modulul de alerte email), ca să apară în lineage-ul `dbt docs generate` — altfel graful se termină la ultimul mart și nu arată ce se întâmplă cu el în afara dbt.
-- **`mart_account_balances` e un periodic snapshot fact, nu un transaction fact** — `fact_financial_transactions` ține un rând per eveniment (o tranzacție); aici avem nevoie de un rând per stare repetată la interval fix (soldul de sfârșit de lună, per bancă), pentru că "cât am în total" e o întrebare despre o stare, nu despre un eveniment. Grain-ul e dens (fiecare bancă apare în fiecare lună dintre prima și ultima ei tranzacție), cu forward-fill via gaps-and-islands (`count()` peste NULL-uri + `first_value()` pe grup) în lunile fără nicio mișcare — altfel soldul acelei bănci ar "dispărea" temporar din net worth, deși banii încă există în cont. Postgres nu are `IGNORE NULLS` pe window functions; gaps-and-islands e echivalentul standard-SQL.
-- **Forecast de cheltuieli via `regr_slope`/`regr_intercept`, nu Python/ML** — sunt funcții agregat standard Postgres, utilizabile ca window functions cu `OVER`, care calculează o regresie liniară simplă (metoda celor mai mici pătrate) direct în SQL. Cu sub 2 luni distincte de date, Postgres le întoarce `NULL` automat — limitarea forecast-ului cu istoric insuficient e vizibilă direct în date, nu ascunsă sau aproximată.
-- **`fact_financial_transactions` e incremental (`unique_key: transaction_id`), restul marts-urilor rămân `table`, deliberat** — fact-ul de tranzacții e append-only prin construcție (raw dedup pe `_row_hash`), candidatul Kimball corect pentru incremental. `fact_daily_productivity` rămâne `table` fiindcă `raw.github_pull_requests` e upsert (un PR poate trece "open"→"merged" la re-ingest, schimbând retroactiv o zi din trecut) — un filtru incremental naiv ar rata acea actualizare. Marts-urile de agregare rămân `table` fiindcă recalculează window functions (rolling average, `regr_slope`) peste tot istoricul — la volumul actual (câteva sute de rânduri chiar la ani de date), full refresh e mai simplu și la fel de corect. Detalii: [Incremental models: nu peste tot, doar unde e corect](docs/interview-notes.md#incremental-models-nu-peste-tot-doar-unde-e-corect-hardening-2026-09-20).
-- **Trade-off acceptat pe incremental:** dacă `dim_expense_category` se corectează retroactiv, factul deja materializat nu se recalculează singur — necesită `dbt run --full-refresh --select fact_financial_transactions` explicit. E comportamentul corect (istoricul rămâne fixat la categoria validă *atunci*), dar conștient, nu implicit.
-- **Semantic Layer peste marts-urile existente, nu în locul lor** — `fact_financial_transactions`/`dim_date`/`dim_merchant`/`dim_expense_category` rămân sursa de adevăr; MetricFlow adaugă un strat de interogare deasupra (metrici + dimensiuni declarate o dată, combinabile generativ), nu duplică logica. `txn_date` a fost adăugat ca și coloană literală pe fact (pe lângă `date_key`) special pentru asta — MetricFlow cere un `agg_time_dimension` real pe modelul cu metricile, nu poate deriva timpul doar dintr-un FK. `dim_date` (deja un date-spine complet) e reutilizat direct ca time spine cerut de Semantic Layer, în loc să fie duplicat un model nou.
-- **`savings_rate` ca metrică `derived`, nu `ratio`** — formula reală e `(total_income - total_spending) / total_income`, nu un raport simplu între două metrici; tipul `derived` din MetricFlow permite o expresie SQL peste metrici deja definite (`total_income`, `total_spending`), aceeași formulă exactă ca în `mart_financial_health.savings_rate` — verificat live că cele două coincid (0.171629 din query vs. 0.1716 din mart, aceeași valoare la rotunjirea la 4 zecimale).
-- **`currency` expus ca dimensiune în semantic layer, nu doar coloană pe fact** — un query cu sume fără unitatea de măsură e ambiguu; `transaction__currency` apare acum direct în output-ul `mf query` (`RON`, singura valută curentă). Ieftin acum, dar pregătește terenul pentru Revolut (sursă multi-valută, deferred separat) — atunci `total_spending` grupat greșit peste valute diferite ar fi o eroare reală, nu doar cosmetică.
-- **Indexuri alese pe motiv concret, nu "index tot"** — `transaction_id` (unic) fiindcă anti-join-ul incremental îl caută la fiecare rulare normală; `date_key`/`merchant_key`/`category_key` fiindcă sunt FK-uri de join Kimball standard; `txn_date` pentru filtrare pe interval. `source_bank` **deliberat neindexat** — 3 valori distincte, selectivitate prea slabă ca un index să bată un Seq Scan, la orice volum realist pentru acest proiect.
-- **Verificat cu `EXPLAIN ANALYZE`, nu presupus** — la 32 rânduri reale, planner-ul Postgres alege Seq Scan pentru un join pe `category_key` (corect: o tabelă de-o pagină nu are ce câștiga dintr-un index lookup). Am simulat temporar ~5.400 rânduri sintetice (bancă goală, BCR, șterse imediat după) și am rulat aceeași interogare: planner-ul a trecut la Bitmap Index Scan pe indexul de `category_key`. Fără simularea asta aș fi putut afirma "am adăugat indexuri" fără nicio dovadă că fac vreo diferență.
-- **`fact_activities`, nu `dim_activity`, pentru activitățile Strava** — o activitate are măsuri reale (distanță, calorii, puls), nu doar atribute descriptive; o dimensiune Kimball nu ar trebui să țină valori agregabile. Grain atomic (un rând = o activitate), exact ca `fact_financial_transactions`; `activity_type` rămâne coloană inline pe fact, nu dimensiune separată — aceeași alegere ca `currency` pe factul financiar, un set mic de valori categorice scopate la un singur fact, nu o dimensiune conformată partajată.
-- **Ingestia Strava a scos la iveală două bug-uri reale, imposibil de prins fără un export adevărat**: coloana generică `Distance` din CSV e în **kilometri**, nu metri (presupunerea inițială, scrisă înainte să existe vreun export real de verificat) — confirmat prin cross-referențiere cu blocul detaliat al header-ului (metri) și `elapsed_time × average_speed`; `Moving Time` e formatat ca float (`"66.0"`) spre deosebire de `Elapsed Time` din același rând (`"66"`) — un `int()` simplu pica. Ambele reparate cu teste de regresie noi, aceeași disciplină ca bug-urile găsite la primul extras bancar real.
-- **`mart_daily_finance_productivity` redenumit în `mart_daily_finance_productivity_fitness`** (nu un mart nou separat) — grain-ul dens pe zi rămâne identic, doar sursele agregate cresc de la două la trei; niciun exposure nu-l consuma încă, deci redenumirea a fost sigură fără nicio migrare de consumatori.
-- **"Verificat live" nu înlocuiește un test automat** — `GitHubRawLoader`/`StravaRawLoader` și `dags/common.py` funcționau corect (confirmat repetat, manual, în sesiuni anterioare), dar nimic nu împiedica o regresie viitoare să le stingă silențios, fără ca `dbt build`/`pytest` să prindă ceva. Testele noi verifică exact comportamentul mutable-entity (upsert reflectă *ultima* stare, nu doar că nu duplică) și immutable-entity (append-only dedup), plus `notify_discord_failure`/`dbt_command` izolat de Airflow (module stdlib pur, deci testabile fără dependințele grele instalate local).
+- **Separate schemas (`raw`/`staging`/`marts`) in a single Postgres, not separate databases** — medallion is a data organization convention, not a reason for process-level isolation; a single Postgres keeps cost (RAM, connections to manage) minimal as long as there's no real concurrency between layers.
+- **Separate Postgres for Airflow metadata** — the scheduler and webserver read/write concurrently, non-stop, into metadata (DAG runs, task instances); mixed with the DWH it would couple two different lifecycles (`make clean` on one shouldn't affect the other).
+- **Embedded H2 for the Metabase app DB, not Postgres** — a single process, a single local user, writes only manual (saving a dashboard) — no real concurrency to solve. Differs from the Airflow case above exactly in the absence of that concurrency; the rule is "isolate when there's a concrete reason", not reflex isolation.
+- **Idempotency at every layer, not just at ingest** — dedup on `_row_hash` in `raw`, `dbt seed`/`snapshot`/`run` all safe to re-run (details: [End-to-end idempotency](docs/design-decisions.md#end-to-end-idempotency)) — a daily DAG *will* run multiple times over the same data (retry, restart), and every step must withstand that independently.
+- **SCD Type 2 via `dbt snapshot`, not a simple `updated_at` on categories** — expense categories change over time; we keep history (`valid_from`/`valid_to`/`is_current`) so a past report uses the category that was valid *then*, not the current one.
+- **Airflow and Metabase in opt-in Docker profiles (`airflow`, `bi`), not in `make up`** — Airflow consumes ~4GB RAM; separating them lets you work on ingestion/dbt without that cost, starting them explicitly only when needed.
+- **Idempotency for the GitHub source chosen per entity, not copied from bank** — `raw.github_commits` is append-only with dedup on `(repo_full_name, sha)` like `raw.bank_transactions`, but `raw.github_repositories`/`raw.github_pull_requests` do an **upsert**: they're mutable entities (a PR's state, a repo's `pushed_at`), so raw keeps only the latest known state, not a history. Details: [Extending the architecture to a second source](docs/design-decisions.md#extending-the-architecture-to-a-second-source-github).
+- **`fact_daily_productivity` is sparse (only days with activity), `mart_daily_finance_productivity` is dense (every day in the active range)** — a Kimball fact keeps only real events; a mart for correlations needs explicit zeros, otherwise a day with no commits would be missing from the analysis instead of being a real data point.
+- **Email alerts are best-effort, not a pipeline precondition** — like the Discord failure alert (`dags/common.py`), `check_alerts` catches any exception while sending the email and only logs it; the task succeeds even if SMTP isn't configured or the mail server is down. This differs from a failing dbt test though: a failing dbt test means *suspect data*, so the pipeline must stop; an unsent alert just means *I failed to notify you*, the data stays correct — not the same severity, so we don't treat the failure the same way.
+- **`mart_budget_alerts` is a separate mart, not an extension of `mart_monthly_spending`** — the grain differs (only categories with a defined budget, via inner join on the `category_budgets` seed) and the purpose is different (operational check, not general reporting); a Kimball aggregate mart shouldn't become the place where every ad-hoc query dumps its needs.
+- **CI runs against an ephemeral test Postgres (service container), not the Postgres from `docker-compose.yml`** — the `test` job starts an empty `postgres:16`, initializes it with the same SQL from `infra/postgres/init/`, generates synthetic data, ingests it, and runs the full `pytest`+`dbt build` against it; the container disappears at the end of the job. This way CI verifies the repo as it would look from a fresh `git clone`, not against the author's accumulated local state. Service containers in Actions start *before* `actions/checkout`, so you can't mount `infra/postgres/init/` as `/docker-entrypoint-initdb.d` (the repo's files don't exist on disk yet at that point) — the SQL scripts are run explicitly, as a separate step, after checkout.
+- **dbt unit tests on the SQL logic, not only `data tests` on the final result** — a `data test` checks the data *after* the model has run against real tables; a `unit test` feeds the model fixed rows and checks the exact output, with no dependency on the current warehouse state. These were written specifically for the two real bugs found while loading real data (merchant fan-out, wrong SCD2 join) — a guaranteed regression if someone accidentally removes the `row_number()`/tie-break from the model, verified live by temporarily reverting the fix and confirming the test fails.
+- **Model contracts (`contract: enforced: true`) on the 4 financial marts** — `dbt build` compares the column types declared in `schema.yml` against what the model's SQL actually produces and **blocks the build** on any name/type/column-count mismatch, before the table is written. Applied specifically to `mart_budget_alerts` (the only mart read via raw SQL from `ingestion/alerts/checker.py`, not just from other dbt models — a rename there wouldn't be caught by any normal dbt test) and to `mart_monthly_spending` (consumed directly by Metabase, which doesn't run dbt tests). Useful side effect: dbt warned that several `numeric` columns without explicit precision risked silent rounding — fixed with `cast(... as numeric(14,2))` in the models.
+- **Exposures** — `metabase_cheltuieli_overview` and `email_budget_alerts` declare in dbt who actually consumes each mart (the Metabase dashboard and the email alerts module, respectively), so they show up in the `dbt docs generate` lineage — otherwise the graph would end at the last mart and not show what happens to it outside dbt.
+- **`mart_account_balances` is a periodic snapshot fact, not a transaction fact** — `fact_financial_transactions` keeps one row per event (a transaction); here we need one row per repeated state at a fixed interval (end-of-month balance, per bank), because "how much do I have in total" is a question about a state, not an event. The grain is dense (every bank appears in every month between its first and last transaction), with forward-fill via gaps-and-islands (`count()` over NULLs + `first_value()` per group) for months with no activity — otherwise that bank's balance would temporarily "disappear" from net worth, even though the money is still in the account. Postgres has no `IGNORE NULLS` on window functions; gaps-and-islands is the standard-SQL equivalent.
+- **Spending forecast via `regr_slope`/`regr_intercept`, not Python/ML** — these are standard Postgres aggregate functions, usable as window functions with `OVER`, that compute a simple linear regression (least squares) directly in SQL. With under 2 distinct months of data, Postgres returns `NULL` automatically — the forecast's limitation with insufficient history is visible directly in the data, not hidden or approximated.
+- **`fact_financial_transactions` is incremental (`unique_key: transaction_id`), the rest of the marts stay `table`, deliberately** — the transactions fact is append-only by construction (raw dedup on `_row_hash`), the correct Kimball candidate for incremental. `fact_daily_productivity` stays `table` because `raw.github_pull_requests` is upsert (a PR can go "open"→"merged" on re-ingest, retroactively changing a past day) — a naive incremental filter would miss that update. The aggregate marts stay `table` because they recompute window functions (rolling average, `regr_slope`) over the full history — at the current volume (a few hundred rows even with years of data), a full refresh is simpler and just as correct. Details: [Incremental models: not everywhere, only where it's correct](docs/design-decisions.md#incremental-models-not-everywhere-only-where-its-correct).
+- **Accepted trade-off on incremental:** if `dim_expense_category` is corrected retroactively, the already-materialized fact doesn't recompute itself — it requires an explicit `dbt run --full-refresh --select fact_financial_transactions`. This is the correct behavior (history stays fixed to the category valid *at that time*), but conscious, not implicit.
+- **Semantic Layer on top of the existing marts, not in their place** — `fact_financial_transactions`/`dim_date`/`dim_merchant`/`dim_expense_category` remain the source of truth; MetricFlow adds a query layer on top (metrics + dimensions declared once, combinable generatively), not a duplicate of the logic. `txn_date` was added as a literal column on the fact (alongside `date_key`) specifically for this — MetricFlow requires a real `agg_time_dimension` on the metrics model, it can't derive time from an FK alone. `dim_date` (already a complete date-spine) is reused directly as the time spine the Semantic Layer requires, instead of duplicating a new model.
+- **`savings_rate` as a `derived` metric, not `ratio`** — the real formula is `(total_income - total_spending) / total_income`, not a simple ratio between two metrics; MetricFlow's `derived` type allows a SQL expression over already-defined metrics (`total_income`, `total_spending`), the exact same formula as in `mart_financial_health.savings_rate` — verified live that the two match (0.171629 from the query vs. 0.1716 from the mart, the same value rounded to 4 decimals).
+- **`currency` exposed as a dimension in the semantic layer, not just a column on the fact** — a query with sums but no unit is ambiguous; `transaction__currency` now appears directly in `mf query` output (`RON`, the only current currency). Cheap now, but it prepares the ground for Revolut (a multi-currency source, deferred separately) — at that point `total_spending` grouped incorrectly across currencies would be a real bug, not just cosmetic.
+- **Indexes chosen for a concrete reason, not "index everything"** — `transaction_id` (unique) because the incremental anti-join looks it up on every normal run; `date_key`/`merchant_key`/`category_key` because they're standard Kimball join FKs; `txn_date` for range filtering. `source_bank` **deliberately not indexed** — 3 distinct values, too low selectivity for an index to beat a Seq Scan at any realistic volume for this project.
+- **Verified with `EXPLAIN ANALYZE`, not assumed** — at 32 real rows, the Postgres planner chooses a Seq Scan for a join on `category_key` (correct: a one-page table has nothing to gain from an index lookup). I temporarily simulated ~5,400 synthetic rows (empty bank, BCR, deleted right after) and ran the same query: the planner switched to a Bitmap Index Scan on the `category_key` index. Without that simulation I could have claimed "I added indexes" with no evidence they make any difference.
+- **`fact_activities`, not `dim_activity`, for Strava activities** — an activity has real measures (distance, calories, heart rate), not just descriptive attributes; a Kimball dimension shouldn't hold aggregatable values. Atomic grain (one row = one activity), exactly like `fact_financial_transactions`; `activity_type` stays an inline column on the fact, not a separate dimension — the same choice as `currency` on the financial fact, a small set of categorical values scoped to a single fact, not a shared conformed dimension.
+- **Strava ingestion surfaced two real bugs, impossible to catch without a real export**: the generic `Distance` column in the CSV is in **kilometers**, not meters (the initial assumption, written before any real export existed to check against) — confirmed by cross-referencing the detailed header block (meters) and `elapsed_time × average_speed`; `Moving Time` is formatted as a float (`"66.0"`) unlike `Elapsed Time` from the same row (`"66"`) — a plain `int()` would fail. Both fixed with new regression tests, the same discipline as the bugs found on the first real bank statement.
+- **`mart_daily_finance_productivity` renamed to `mart_daily_finance_productivity_fitness`** (not a new separate mart) — the dense daily grain stays identical, only the aggregated sources grow from two to three; no exposure consumed it yet, so the rename was safe with no consumer migration needed.
+- **"Verified live" doesn't replace an automated test** — `GitHubRawLoader`/`StravaRawLoader` and `dags/common.py` worked correctly (repeatedly confirmed, manually, in earlier sessions), but nothing prevented a future regression from silently breaking them, with neither `dbt build` nor `pytest` catching it. The new tests verify exactly the mutable-entity behavior (upsert reflects the *latest* state, not just that it doesn't duplicate) and immutable-entity behavior (append-only dedup), plus `notify_discord_failure`/`dbt_command` isolated from Airflow (pure stdlib modules, so testable without the heavy dependencies installed locally).

@@ -34,3 +34,8 @@ Thumbs.db
 # IDE
 .vscode/
 .idea/
+
+# Local-only working docs (AI mentor prompt + personal interview prep notes,
+# not meant for the public repo — see docs/design-decisions.md instead)
+/CLAUDE.md
+/docs/interview-notes.md
