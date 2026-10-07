@@ -96,7 +96,7 @@ services:
       airflow-init:
         condition: service_completed_successfully
 
-  # BI (Faza 4), profil separat "bi" — pornit doar cu `make bi-up`. App DB proprie
+  # BI, profil separat "bi" — pornit doar cu `make bi-up`. App DB proprie
   # (dashboard-uri, useri Metabase) e H2 embedded, nu Postgres: un singur proces,
   # un singur user local, fara concurrency reala — spre deosebire de Airflow
   # (scheduler + webserver scriu concurent in metadata), aici izolarea suplimentara

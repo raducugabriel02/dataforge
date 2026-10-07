@@ -65,7 +65,7 @@ dbt-docs:
 	$(_dbt) docs generate --project-dir dbt_project --profiles-dir dbt_project
 	$(_dbt) docs serve --project-dir dbt_project --profiles-dir dbt_project
 
-# Profil separat "airflow" — nepornit de `make up`, ca sa poti lucra pe Fazele 0-2
+# Profil separat "airflow" — nepornit de `make up`, ca sa poti lucra pe dbt/ingestie
 # fara cele ~4GB RAM pe care le cere Airflow. UI la http://localhost:8080
 # (user/parola din AIRFLOW_ADMIN_USER/AIRFLOW_ADMIN_PASSWORD in .env).
 airflow-up:

@@ -10,9 +10,8 @@ class GitHubConfig:
     username: str
     # Optional ISO date (YYYY-MM-DD): bounds how far back commit history is
     # pulled. Left unset, every run walks each repo's full commit history —
-    # fine for a personal-scale portfolio repo count, but a real 100x-scale
-    # deployment would track a per-repo high-water mark instead (see
-    # docs/interview-notes.md, "idempotency end-to-end").
+    # fine at this project's scale; a 100x deployment would track a per-repo
+    # high-water mark instead (see docs/design-decisions.md).
     commits_since: str | None
 
     @classmethod

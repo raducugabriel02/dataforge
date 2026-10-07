@@ -28,10 +28,9 @@ pdf = [
     "pdfplumber>=0.11",
 ]
 semantic-layer = [
-    # dbt Semantic Layer / MetricFlow, rulat local (nu dbt Cloud) — interogare
-    # generativa a metricilor peste marts, fara SQL nou per combinatie de
-    # dimensiuni. Grup separat de `dbt` fiindca nu e necesar pipeline-ului
-    # de productie (ingest/dbt build/Airflow), doar pentru explorare/interviu.
+    # dbt Semantic Layer / MetricFlow, rulat local (nu dbt Cloud). Grup separat
+    # de `dbt` fiindca nu e necesar pipeline-ului de productie (ingest/dbt
+    # build/Airflow), doar pentru query-uri ad-hoc pe metrici (`mf query`).
     "dbt-metricflow[postgres]>=0.15",
 ]
 

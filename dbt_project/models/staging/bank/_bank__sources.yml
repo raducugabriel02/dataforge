@@ -7,8 +7,8 @@ sources:
       - name: bank_transactions
         description: >
           Append-only landing zone for parsed bank statement rows, loaded by
-          the Python ingestion pipeline (Faza 1). Deduped at insert time by
-          _row_hash — a hash of the economic event, not the source file.
+          the Python ingestion pipeline. Deduped at insert time by _row_hash
+          — a hash of the economic event, not the source file.
         columns:
           - name: _row_hash
             description: SHA-256 of (bank, date, description, amount, balance_after) — the idempotency key.

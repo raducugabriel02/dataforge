@@ -1,15 +1,9 @@
--- Incremental (unique_key: transaction_id, config in schema.yml): fiecare
--- rulare normala proceseaza doar tranzactiile noi, nu reconstruieste toata
--- tabela. Efect secundar de retinut: daca dim_expense_category se schimba
--- retroactiv (ex: capcana SCD2 valid_from din interview-notes.md), factul
--- deja materializat NU se recalculeaza singur — trebuie `dbt run --full-refresh
--- --select fact_financial_transactions` explicit. E comportamentul corect, nu
--- un bug: istoricul ramane fixat la ce era valid la momentul tranzactiei.
+-- Incremental on transaction_id: if dim_expense_category changes
+-- retroactively, this fact does NOT recompute on a normal run — requires
+-- `dbt run --full-refresh --select fact_financial_transactions` explicitly.
 --
--- txn_date e pastrat ca si coloana literala (nu doar date_key, FK-ul surogat
--- spre dim_date) special pentru Semantic Layer: MetricFlow cere un
--- agg_time_dimension real (tip time) direct pe modelul semantic care are
--- metricile, nu poate deriva timpul doar dintr-un FK catre alt model.
+-- txn_date is kept as a literal column (not just date_key) because
+-- MetricFlow's agg_time_dimension needs a real time-typed column here.
 with transactions as (
     select * from {{ ref('stg_bank__transactions') }}
 ),
@@ -18,13 +12,10 @@ merchant_rules as (
     select * from {{ ref('merchant_rules') }}
 ),
 
--- one row per transaction, enriched with the merchant/category matched from
--- its description (may not have a match — left join, defaults applied below).
--- O descriere reala poate contine mai multe pattern-uri deodata (ex: o linie
--- de comision care mentioneaza si numele platformei de pariuri) — fara sa
--- alegem un singur castigator determinist, tranzactia s-ar duplica aici
--- (fan-out pe left join), nu doar categorisi gresit. Vezi acelasi tie-break
--- (priority, apoi lungime pattern) ca in dim_merchant.sql.
+-- A description can match multiple merchant_rules patterns at once (e.g. a
+-- fee line that also mentions a betting platform) — row_number() picks one
+-- deterministic winner (priority, then longest pattern) to avoid fan-out
+-- duplicates from the left join. Same tie-break as dim_merchant.sql.
 matched as (
     select
         transactions.*,

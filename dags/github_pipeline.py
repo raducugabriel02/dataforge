@@ -1,4 +1,4 @@
-"""Pipeline zilnic pentru sursa GitHub (Faza 5).
+"""Pipeline zilnic pentru sursa GitHub.
 
 Flux: ingest repos (raw.github_repositories) -> pentru fiecare repo, in paralel
 (dynamic task mapping, acelasi pattern ca bank_pipeline.check_source/ingest),

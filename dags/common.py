@@ -1,7 +1,7 @@
-"""Helpers partajate intre DAG-uri (extrase la Faza 5, cand al doilea
-pipeline a avut nevoie de exact aceeasi alerta Discord si acelasi format de
-comanda dbt ca bank_pipeline.py — semn ca merita un modul comun, nu ca fiecare
-DAG isi reimplementeaza propria varianta).
+"""Helpers partajate intre DAG-uri (extrase cand al doilea pipeline a avut
+nevoie de exact aceeasi alerta Discord si acelasi format de comanda dbt ca
+bank_pipeline.py — semn ca merita un modul comun, nu ca fiecare DAG isi
+reimplementeaza propria varianta).
 """
 
 from __future__ import annotations

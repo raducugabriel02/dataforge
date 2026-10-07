@@ -6,8 +6,8 @@ sources:
     tables:
       - name: github_repositories
         description: >
-          Latest known state of the user's owned GitHub repositories (Faza 5).
-          Mutable entity — upserted on repo_id, not append-only: pushed_at and
+          Latest known state of the user's owned GitHub repositories. Mutable
+          entity — upserted on repo_id, not append-only: pushed_at and
           language can change between ingestion runs.
         columns:
           - name: repo_id

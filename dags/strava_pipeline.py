@@ -1,12 +1,12 @@
-"""Pipeline zilnic pentru sursa Strava (Faza 6, v3).
+"""Pipeline zilnic pentru sursa Strava.
 
 Spre deosebire de github_pipeline (poll live pe API), sursa Strava e un
 export manual, dropped periodic in data/private/strava_export_raw/activities.csv
-(Strava limiteaza exportul la o cerere/saptamana - vezi docs/interview-notes.md).
-Flux: cauta fisierul -> ingest idempotent (upsert pe activity_id, ca la
-github repos/PRs) -> transformari dbt filtrate pe tag-urile "strava" si
-"combined" (reconstruieste si mart-ul combinat finante x productivitate x
-fitness). Un test dbt picat opreste pipeline-ul.
+(Strava limiteaza exportul la o cerere/saptamana). Flux: cauta fisierul ->
+ingest idempotent (upsert pe activity_id, ca la github repos/PRs) ->
+transformari dbt filtrate pe tag-urile "strava" si "combined" (reconstruieste
+si mart-ul combinat finante x productivitate x fitness). Un test dbt picat
+opreste pipeline-ul.
 """
 
 from __future__ import annotations

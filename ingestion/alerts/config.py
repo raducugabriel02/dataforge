@@ -16,10 +16,10 @@ class AlertConfig:
 
     @classmethod
     def from_env(cls) -> AlertConfig:
-        # SMTP-ul necompletat e un stare valida (la fel ca DISCORD_WEBHOOK_URL
-        # in Faza 3): pipeline-ul tot ruleaza, EmailSender doar sare peste
-        # trimitere si logheaza. Nu ridicam ValueError aici ca la GitHubConfig,
-        # fiindca alertele nu sunt o precondifie a rularii, ci un extra.
+        # SMTP necompletat e o stare valida (la fel ca DISCORD_WEBHOOK_URL):
+        # pipeline-ul tot ruleaza, EmailSender doar sare peste trimitere si
+        # logheaza. Nu ridicam ValueError aici ca la GitHubConfig, fiindca
+        # alertele nu sunt o precondifie a rularii, ci un extra.
         return cls(
             smtp_host=os.environ.get("SMTP_HOST", "smtp.gmail.com"),
             smtp_port=int(os.environ.get("SMTP_PORT", "587")),

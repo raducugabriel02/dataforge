@@ -1,8 +1,8 @@
 """Generate synthetic Romanian bank statement CSVs (BT, BCR, ING formats).
 
 Produces realistic-looking fixtures for the ingestion pipeline so real
-financial data never has to enter the repo (see CLAUDE.md rule #5).
-Each bank writer deliberately mimics a different real-world quirk:
+financial data never has to enter the repo. Each bank writer deliberately
+mimics a different real-world quirk:
 delimiter, column names, date format, debit/credit representation, and a
 messy, bank-specific description string (so dbt staging has real
 normalization work to do, not a no-op).

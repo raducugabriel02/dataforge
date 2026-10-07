@@ -1,7 +1,7 @@
 """Unit tests for dags/common.py — previously only verified live in the real
-Airflow container (Faza 5/6 DAG runs), never covered by an automated test.
-No airflow import needed: the module is deliberately plain stdlib, so it's
-testable without airflow installed in this environment.
+Airflow container, never covered by an automated test. No airflow import
+needed: the module is deliberately plain stdlib, so it's testable without
+airflow installed in this environment.
 """
 
 from __future__ import annotations
